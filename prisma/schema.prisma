@@ -1,0 +1,247 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Benutzer-Modell
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  username  String   @unique
+  password  String
+  firstName String?
+  lastName  String?
+  avatar    String?
+  role      UserRole @default(USER)
+  isActive  Boolean  @default(true)
+  emailVerified DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Beziehungen
+  projectMembers ProjectMember[]
+  createdTasks   Task[]         @relation("TaskCreator")
+  assignedTasks  Task[]         @relation("TaskAssignee")
+  timeEntries    TimeEntry[]
+  notifications  Notification[]
+  sessions       Session[]
+  comments       Comment[]
+  fileUploads    FileUpload[]   @relation("FileUploads")
+
+  @@map("users")
+}
+
+// Benutzer-Rollen
+enum UserRole {
+  ADMIN
+  MANAGER
+  USER
+  TRAINEE
+}
+
+// Projekt-Modell
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  priority    Priority @default(MEDIUM)
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Float?
+  clientName  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Beziehungen
+  tasks       Task[]
+  timeEntries TimeEntry[]
+  members     ProjectMember[]
+  fileUploads FileUpload[]
+
+  @@map("projects")
+}
+
+// Projekt-Status
+enum ProjectStatus {
+  ACTIVE
+  COMPLETED
+  ON_HOLD
+  CANCELLED
+}
+
+// Priorität
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+// Projekt-Mitglieder
+model ProjectMember {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  role      ProjectRole @default(MEMBER)
+  joinedAt  DateTime @default(now())
+
+  // Beziehungen
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@map("project_members")
+}
+
+// Projekt-Rollen
+enum ProjectRole {
+  OWNER
+  MANAGER
+  MEMBER
+  VIEWER
+}
+
+// Aufgaben-Modell
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    Priority @default(MEDIUM)
+  estimatedHours Float?
+  actualHours Float?
+  dueDate    DateTime?
+  assignedTo String?
+  projectId  String
+  parentTaskId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Beziehungen
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator     User        @relation("TaskCreator", fields: [createdBy], references: [id])
+  createdBy   String
+  assignedUser User?      @relation("TaskAssignee", fields: [assignedTo], references: [id])
+  parentTask  Task?       @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
+  subtasks    Task[]      @relation("TaskHierarchy")
+  timeEntries TimeEntry[]
+  comments    Comment[]
+  fileUploads FileUpload[]
+
+  @@map("tasks")
+}
+
+// Aufgaben-Status
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+  CANCELLED
+}
+
+// Zeiterfassung
+model TimeEntry {
+  id          String   @id @default(cuid())
+  userId      String
+  projectId   String
+  taskId      String?
+  description String?
+  startTime   DateTime
+  endTime     DateTime?
+  duration    Int? // in Minuten
+  isBillable Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Beziehungen
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task    Task?   @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@map("time_entries")
+}
+
+// Kommentare
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  userId    String
+  taskId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Beziehungen
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
+}
+
+// Benachrichtigungen
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType @default(INFO)
+  isRead    Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  // Beziehungen
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// Benachrichtigungstypen
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+// Benutzer-Sessions
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  // Beziehungen
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// Datei-Uploads
+model FileUpload {
+  id          String   @id @default(cuid())
+  fileName    String
+  filePath    String
+  fileSize    Int
+  fileType    String
+  uploadedBy  String
+  projectId   String?
+  taskId      String?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Beziehungen
+  uploadedByUser User     @relation("FileUploads", fields: [uploadedBy], references: [id], onDelete: Cascade)
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task           Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@map("file_uploads")
+}
