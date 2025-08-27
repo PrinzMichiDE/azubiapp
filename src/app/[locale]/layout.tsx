@@ -6,10 +6,11 @@ import { notFound } from 'next/navigation'
 import { locales } from '@/i18n'
 import { ThemeProvider } from '@/components/providers/theme-provider'
 import { QueryProvider } from '@/components/providers/query-provider'
+import { AuthProvider } from '@/contexts/AuthContext'
 import { Header } from '@/components/layout/header'
 import { Footer } from '@/components/layout/footer'
 import { ToastProvider, Toaster } from '@/components/ui/toaster'
-import './globals.css'
+import '../globals.css'
 
 // Inter Schriftart konfigurieren
 const inter = Inter({ 
@@ -92,7 +93,7 @@ export default async function LocaleLayout({
   params: { locale }
 }: LocaleLayoutProps) {
   // Validiere, ob die angeforderte Sprache unterstützt wird
-  if (!locales.includes(locale as any)) {
+  if (!locales.includes(locale as 'de' | 'en')) {
     notFound()
   }
 
@@ -113,8 +114,10 @@ export default async function LocaleLayout({
           >
             {/* React Query Provider für API-Zustandsverwaltung */}
             <QueryProvider>
-              {/* Toast Provider für Benachrichtigungen */}
-              <ToastProvider>
+              {/* Auth Provider für Authentifizierung */}
+              <AuthProvider>
+                {/* Toast Provider für Benachrichtigungen */}
+                <ToastProvider>
                 {/* Hauptcontainer */}
                 <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
                   {/* Header mit Navigation */}
@@ -131,7 +134,8 @@ export default async function LocaleLayout({
                 
                 {/* Toast-Benachrichtigungen */}
                 <Toaster />
-              </ToastProvider>
+                </ToastProvider>
+              </AuthProvider>
             </QueryProvider>
           </ThemeProvider>
         </NextIntlClientProvider>

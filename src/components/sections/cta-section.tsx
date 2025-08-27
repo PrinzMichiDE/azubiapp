@@ -109,7 +109,7 @@ export function CTASection() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
             <div>
               <div className="text-3xl font-bold text-primary-400 mb-2">
-                < 2 Min
+                &lt; 2 Min
               </div>
               <div className="text-gray-300">
                 Setup-Zeit

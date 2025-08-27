@@ -10,7 +10,7 @@ import {
   ClockIcon,
   CalendarIcon,
   UserIcon,
-  ProjectIcon
+  RectangleStackIcon
 } from '@heroicons/react/24/outline'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -297,11 +297,11 @@ export default function TimeTrackingPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <Button variant="outline" className="w-full justify-start" size="sm">
-                  <ProjectIcon className="h-4 w-4 mr-2" />
+                  <RectangleStackIcon className="h-4 w-4 mr-2" />
                   Website-Redesign
                 </Button>
                 <Button variant="outline" className="w-full justify-start" size="sm">
-                  <ProjectIcon className="h-4 w-4 mr-2" />
+                  <RectangleStackIcon className="h-4 w-4 mr-2" />
                   Mobile App
                 </Button>
                 <Button variant="outline" className="w-full justify-start" size="sm">
@@ -331,7 +331,7 @@ export default function TimeTrackingPage() {
                       <div className="flex-1">
                         <div className="flex items-center space-x-4">
                           <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                            <ProjectIcon className="h-4 w-4 mr-1" />
+                            <RectangleStackIcon className="h-4 w-4 mr-1" />
                             {entry.projectName}
                           </div>
                           <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">

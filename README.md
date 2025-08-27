@@ -263,7 +263,7 @@ Dieses Projekt ist unter der MIT-Lizenz lizenziert. Siehe [LICENSE](LICENSE) fü
 - **Dokumentation**: [docs.azubi.de](https://docs.azubi.de)
 - **Issues**: [GitHub Issues](https://github.com/azubi/issues)
 - **Discord**: [Community Server](https://discord.gg/azubi)
-- **E-Mail**: support@azubi.de
+- **E-Mail**: azubi-app@michelfritzsch.de
 
 ## 🙏 Danksagungen
 

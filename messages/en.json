@@ -35,10 +35,14 @@
     "dashboard": "Dashboard",
     "projects": "Projects",
     "tasks": "Tasks",
+    "timeTracking": "Time Tracking",
     "calendar": "Calendar",
     "reports": "Reports",
     "users": "Users",
-    "administration": "Administration"
+    "team": "Team",
+    "administration": "Administration",
+    "features": "Features",
+    "pricing": "Pricing"
   },
   "auth": {
     "signIn": "Sign In",

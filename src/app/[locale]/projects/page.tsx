@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
 import { 
   PlusIcon, 
-  FilterIcon, 
-  SearchIcon,
+  FunnelIcon, 
+  MagnifyingGlassIcon,
   CalendarIcon,
   UserGroupIcon,
   ClockIcon,
@@ -188,7 +188,7 @@ export default function ProjectsPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* Suchfeld */}
               <div className="relative">
-                <SearchIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
                 <input
                   type="text"
                   placeholder="Projekte durchsuchen..."
@@ -226,7 +226,7 @@ export default function ProjectsPage() {
 
               {/* Filter-Button */}
               <Button variant="outline" className="flex items-center justify-center">
-                <FilterIcon className="h-5 w-5 mr-2" />
+                <FunnelIcon className="h-5 w-5 mr-2" />
                 Filter anwenden
               </Button>
             </div>

@@ -147,7 +147,7 @@ export function StatsSection() {
                   Support
                 </h3>
                 <p className="text-accent-600 dark:text-accent-400 font-medium">
-                  < 2 Min
+                  &lt; 2 Min
                 </p>
               </div>
             </div>

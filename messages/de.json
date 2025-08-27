@@ -35,10 +35,14 @@
     "dashboard": "Dashboard",
     "projects": "Projekte",
     "tasks": "Aufgaben",
+    "timeTracking": "Zeiterfassung",
     "calendar": "Kalender",
     "reports": "Berichte",
     "users": "Benutzer",
-    "administration": "Verwaltung"
+    "team": "Team",
+    "administration": "Verwaltung",
+    "features": "Features",
+    "pricing": "Preise"
   },
   "auth": {
     "signIn": "Anmelden",
