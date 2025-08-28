@@ -1,0 +1,213 @@
+---
+alwaysApply: true
+description: "Zusammenfassung aller Cursor Rules für das Azubi-App Projekt"
+---
+
+# 📋 Azubi App - Vollständige Cursor Rules Zusammenfassung
+
+## 🎯 **Projektkontext**
+Die Azubi App ist eine moderne Projektmanagement-Plattform mit Next.js 15, TypeScript, Prisma und PostgreSQL. Alle Entwicklungsstandards zielen auf höchste Code-Qualität, Sicherheit und Wartbarkeit ab.
+
+## 🏗️ **Architektur & Struktur**
+
+### **Frontend Architecture** ([component-architecture.mdc](mdc:component-architecture.mdc))
+- **Next.js 15** mit App Router Pattern
+- **React 19** mit TypeScript für Type Safety
+- **Modulare Komponentenstruktur** in `src/components/`
+- **Server/Client Components** korrekt trennen
+- **Custom Hooks** für wiederverwendbare Logik
+
+### **Backend Architecture** ([backend-architecture.mdc](mdc:backend-architecture.mdc))
+- **API Routes** in `src/app/api/` Organisation
+- **Prisma ORM** für Datenbankzugriff
+- **JWT Authentication** mit bcryptjs
+- **Zod Schema Validation** für alle API Endpoints
+
+### **Database Schema** ([database-schema.mdc](mdc:database-schema.mdc))
+- **PostgreSQL** als Hauptdatenbank
+- **Prisma Schema** in `prisma/schema.prisma`
+- **Relationale Datenmodelle** für User, Projects, Tasks, TimeEntries
+- **Rollen-basierte Zugriffskontrolle** (ADMIN, MANAGER, USER, TRAINEE)
+
+## 🔐 **Sicherheit & Authentifizierung**
+
+### **Authentication System** ([authentication-system.mdc](mdc:authentication-system.mdc))
+- **JWT-basierte Authentifizierung** mit sicherer Token-Generierung
+- **Role-based Access Control** für alle geschützten Routen
+- **Sichere Passwort-Hashing** mit bcrypt (12 Salt Rounds)
+- **Session Management** mit localStorage und Token-Refresh
+
+### **Security Concept** ([security-concept.mdc](mdc:security-concept.mdc))
+- **Input Validation** mit Zod Schemas
+- **Rate Limiting** für API Endpoints
+- **CORS Configuration** für sichere API-Zugriffe
+- **Environment Variables** für sensible Daten
+
+### **Auth Environment Config** ([auth-environment-config.mdc](mdc:auth-environment-config.mdc))
+- **NEXTAUTH_URL** immer aus process.env verwenden
+- **Keine hardcodierten URLs** oder window.location.origin
+- **Sichere JWT Secret Konfiguration**
+
+## 🌐 **API & Datenmanagement**
+
+### **API Standards** ([api-standards.mdc](mdc:api-standards.mdc))
+- **RESTful API Design** mit konsistenten Endpoints
+- **Standardisierte Response Formate** mit TypeScript Interfaces
+- **Error Handling** mit strukturierten Fehlermeldungen
+- **API Versioning** für Zukunftssicherheit
+
+### **API Endpoints** ([api-endpoints.mdc](mdc:api-endpoints.mdc))
+- **GET /v1/worktime/my/projects** für Projekt-Abruf (bevorzugt)
+- **Konsistente URL-Struktur** für alle Endpoints
+- **Typisierte Request/Response** mit Zod Validation
+
+### **Data Fetching** ([data-fetching.mdc](mdc:data-fetching.mdc))
+- **@tanstack/react-query** für Server State Management
+- **Axios** als HTTP-Client mit Interceptors
+- **Error Boundaries** für robuste Fehlerbehandlung
+- **Optimistic Updates** für bessere UX
+
+## 🎨 **Frontend & UI/UX**
+
+### **Frontend UI/UX** ([frontend-ui-ux.mdc](mdc:frontend-ui-ux.mdc))
+- **Tailwind CSS v3** für konsistentes Styling
+- **Responsive Design** für alle Gerätegrößen
+- **Moderne UI-Komponenten** mit class-variance-authority
+- **Accessibility Standards** (WCAG-konform)
+
+### **UI Components** ([ui-components.mdc](mdc:ui-components.mdc))
+- **Wiederverwendbare Komponenten** in `src/components/ui/`
+- **TypeScript Props Interfaces** für alle Komponenten
+- **Consistent Styling** mit Tailwind Utilities
+- **Component Variants** mit CVA (Class Variance Authority)
+
+### **Accessibility WCAG Compliance** ([accessibility-wcag-compliance.mdc](mdc:accessibility-wcag-compliance.mdc))
+- **WCAG 2.1 AA Standards** einhalten
+- **Semantic HTML** für Screen Reader
+- **Keyboard Navigation** für alle Interaktionen
+- **Color Contrast** Requirements
+
+## 🌍 **Internationalisierung**
+
+### **Internationalization i18n** ([internationalization-i18n.mdc](mdc:internationalization-i18n.mdc))
+- **next-intl** für Deutsch/Englisch Support
+- **Messages** in `messages/de.json` und `messages/en.json`
+- **Locale-basierte Routing** mit `[locale]` Parameter
+- **Typisierte Übersetzungen** mit TypeScript
+
+## 📋 **Entwicklungsstandards**
+
+### **Development Standards** ([development-standards.mdc](mdc:development-standards.mdc))
+- **TypeScript Strict Mode** für maximale Type Safety
+- **ESLint + Prettier** für Code Consistency
+- **Kommentare in Deutsch/Englisch** für automatische Dokumentation
+- **npm-check-updates** für aktuelle Dependencies
+
+### **Testing Standards** ([testing-standards.mdc](mdc:testing-standards.mdc))
+- **Unit Tests** für kritische Funktionen
+- **Integration Tests** für API Endpoints
+- **E2E Tests** für User Journeys
+- **Type Checking** mit TypeScript Compiler
+
+### **Git Workflow** ([git-workflow.mdc](mdc:git-workflow.mdc))
+- **Feature Branches** für neue Entwicklungen
+- **Conventional Commits** für klare Commit Messages
+- **Pull Request Reviews** vor Merge
+- **Automated CI/CD** Pipeline
+
+## 🚀 **Deployment & DevOps**
+
+### **Docker Deployment** ([docker-deployment.mdc](mdc:docker-deployment.mdc))
+- **Multi-stage Docker Builds** für Optimierung
+- **Docker Compose** für lokale Entwicklung
+- **Environment-spezifische Konfiguration**
+- **Health Checks** für Container Monitoring
+
+### **Deployment DevOps** ([deployment-devops.mdc](mdc:deployment-devops.mdc))
+- **Vercel Deployment** für Frontend
+- **Database Migration** mit Prisma
+- **Environment Variables** Management
+- **Monitoring & Logging** Setup
+
+### **Vercel Analytics Speed Insights** ([vercel-analytics-speed-insights.mdc](mdc:vercel-analytics-speed-insights.mdc))
+- **@vercel/analytics** für User Analytics
+- **@vercel/speed-insights** für Performance Monitoring
+- **Privacy-compliant** Tracking
+- **Performance Optimization** basierend auf Insights
+
+## 🛠️ **Spezielle Features**
+
+### **Admin Features** ([admin-features.mdc](mdc:admin-features.mdc))
+- **Admin Dashboard** für Systemverwaltung
+- **User Management** mit Rollenverwaltung
+- **System Statistics** und Monitoring
+- **Bulk Operations** für Administratoren
+
+### **AI Integration** ([ai-integration.mdc](mdc:ai-integration.mdc))
+- **AI-powered Features** für intelligente Automatisierung
+- **Machine Learning** Algorithmen für Empfehlungen
+- **Natural Language Processing** für Aufgabenerstellung
+- **Predictive Analytics** für Projektplanung
+
+### **Gamification Features** ([gamification-features.mdc](mdc:gamification-features.mdc))
+- **Achievement System** für Motivation
+- **Progress Tracking** mit Badges
+- **Leaderboards** für Team Competition
+- **XP Points** für abgeschlossene Aufgaben
+
+### **Learning Features** ([learning-features.mdc](mdc:learning-features.mdc))
+- **Skill Tracking** für Azubi-Entwicklung
+- **Learning Paths** mit strukturierten Kursen
+- **Knowledge Base** mit Tutorials
+- **Progress Assessment** und Zertifizierungen
+
+### **PWA Offline Functionality** ([pwa-offline-functionality.mdc](mdc:pwa-offline-functionality.mdc))
+- **Service Worker** für Offline-Funktionalität
+- **App Manifest** für Installation
+- **Offline Data Sync** bei Reconnection
+- **Push Notifications** für Updates
+
+## 📊 **Storage & Integration**
+
+### **MinIO Integration Storage** ([minio-integration-storage.mdc](mdc:minio-integration-storage.mdc))
+- **File Upload API** mit MinIO Backend
+- **Secure File Handling** mit Bucket Policies
+- **Image Optimization** für Web Delivery
+- **File Type Validation** und Size Limits
+
+### **Docker Monitoring** ([docker-monitoring.mdc](mdc:docker-monitoring.mdc))
+- **Redis nicht zugänglich** - Alternative Monitoring verwenden
+- **Container Health Checks** implementieren
+- **Log Aggregation** für Debugging
+- **Performance Metrics** sammeln
+
+## 📝 **Dokumentation**
+
+### **Automatic Documentation** ([automatic-documentation.mdc](mdc:automatic-documentation.mdc))
+- **JSDoc Comments** in Deutsch/Englisch
+- **API Documentation** automatisch generiert
+- **Component Documentation** mit Storybook
+- **README Updates** bei Feature Changes
+
+### **API Documentation Developer Experience** ([api-documentation-developer-experience.mdc](mdc:api-documentation-developer-experience.mdc))
+- **OpenAPI Specs** für alle Endpoints
+- **Interactive API Explorer** für Testing
+- **Code Examples** in multiple Sprachen
+- **SDK Generation** für verschiedene Plattformen
+
+## ⚙️ **Wichtige Erinnerungen**
+
+1. **Immer neueste npm-Versionen** verwenden [[memory:6728985]]
+2. **process.env.NEXTAUTH_URL** statt hardcodierte URLs [[memory:6728992]]
+3. **GET /v1/worktime/my/projects** für Projekt-Abruf [[memory:6728987]]
+4. **Keine reCAPTCHA** - interne Lösungen bevorzugen [[memory:6728989]]
+5. **Einfache Formatierung** für Listen [[memory:6728990]]
+
+## 🎯 **Code-Qualitäts-Prinzipien**
+
+- **Security First** - Sicherheit hat oberste Priorität
+- **Wiederverwendbarkeit** - DRY-Prinzip anwenden
+- **Wartbarkeit** - Clean Code Standards
+- **Performance** - Optimiert für Geschwindigkeit
+- **Accessibility** - Barrierefrei für alle User
+- **Type Safety** - Vollständige TypeScript Typisierung

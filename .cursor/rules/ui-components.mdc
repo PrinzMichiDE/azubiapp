@@ -1,0 +1,54 @@
+# UI-Komponenten und shadcn/ui Standards
+
+## shadcn/ui Integration
+- **Komponenten kopieren**: Alle benötigten shadcn/ui Komponenten ins Projekt kopieren
+- **Anpassungen**: Komponenten für LXP-spezifische Anforderungen erweitern
+- **Konsistenz**: Einheitliches Design-System über alle Seiten hinweg
+- **Theming**: Dark/Light Mode Support mit CSS-Variablen
+
+## Komponenten-Struktur
+```typescript
+// Beispiel für eine LXP-spezifische Komponente
+interface LearningCardProps {
+  title: string;
+  description: string;
+  progress: number;
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  estimatedTime: number;
+  tags: string[];
+}
+
+// Deutsche und englische Kommentare
+/**
+ * Lernkarte für das Dashboard
+ * Learning card for the dashboard
+ */
+export function LearningCard({ title, description, progress, difficulty, estimatedTime, tags }: LearningCardProps) {
+  // Komponenten-Logik hier
+  // Component logic here
+}
+```
+
+## Design-System
+- **Farben**: Konsistente Farbpalette für alle Zustände (primary, secondary, success, warning, error)
+- **Typografie**: Einheitliche Schriftgrößen und -gewichte
+- **Spacing**: Konsistente Abstände (4px Grid-System)
+- **Shadows**: Einheitliche Schatten für Tiefe und Hierarchie
+- **Border Radius**: Konsistente Rundungen für moderne Optik
+
+## Responsive Design
+- **Mobile-First**: Alle Komponenten für mobile Geräte optimieren
+- **Breakpoints**: Tailwind CSS Breakpoints verwenden (sm, md, lg, xl, 2xl)
+- **Touch-Friendly**: Ausreichende Touch-Targets (min. 44px)
+- **Flexible Layouts**: CSS Grid und Flexbox für adaptive Layouts
+
+## Accessibility
+- **ARIA-Labels**: Alle interaktiven Elemente mit aussagekräftigen Labels
+- **Keyboard Navigation**: Vollständige Tastaturnavigation
+- **Focus Management**: Klare Fokus-Indikatoren
+- **Screen Reader**: Semantische HTML-Struktur
+- **Color Contrast**: Ausreichender Kontrast für bessere Lesbarkeit
+description:
+globs:
+alwaysApply: true
+---

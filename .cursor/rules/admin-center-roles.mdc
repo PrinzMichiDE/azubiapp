@@ -1,0 +1,672 @@
+# Admin Center und Rollen-Management
+
+## Übersicht
+
+Das Admin Center ist der zentrale Verwaltungsbereich für Ausbilder und Administratoren der LXP-Plattform. Es implementiert ein robustes Role-Based Access Control (RBAC) System mit drei Hauptrollen: AZUBI, AUSBILDER und ADMIN.
+
+## Rollenkonzept
+
+### AZUBI (Auszubildender)
+- **Beschreibung**: Standardrolle für Lernende, fokussiert auf Lernen und Community
+- **Berechtigungen**:
+  - Zugriff auf Dashboard, Lernpfade, Community
+  - Erstellen von User-generated Content
+  - View eigener Fortschritt und Empfehlungen
+  - **Kein Zugriff** auf Admin Center
+- **Zuweisung**: Automatisch bei Registrierung
+
+### AUSBILDER (Ausbilder)
+- **Beschreibung**: Rolle für Trainer/Unternehmensmitarbeiter
+- **Berechtigungen**:
+  - Vollzugriff auf Admin Center (Analysen, CMS, Empfehlungs-Tuning)
+  - View und Edit von Gruppenfortschritten
+  - Moderation von Community-Inhalten
+  - HR-Integration triggern
+  - **Kein Zugriff** auf globale Einstellungen
+- **Zuweisung**: Manuell im Admin Center oder via Unternehmenscode
+
+### ADMIN (Administrator)
+- **Beschreibung**: Höchste Rolle für Systemadministratoren
+- **Berechtigungen**:
+  - Alle AUSBILDER-Rechte plus:
+  - User-Management (Erstellen/Löschen von Accounts, Rollen zuweisen)
+  - Globale Einstellungen
+  - Audit-Logs einsehen
+  - System-Monitoring
+
+## RBAC-Implementierung
+
+### Auth.js Integration
+```typescript
+// lib/auth.ts
+import { NextAuthOptions } from 'next-auth';
+
+export const authOptions: NextAuthOptions = {
+  callbacks: {
+    jwt: async ({ token, user }) => {
+      if (user) {
+        token.role = user.role;
+        token.permissions = user.permissions;
+      }
+      return token;
+    },
+    session: async ({ session, token }) => {
+      if (token) {
+        session.user.role = token.role;
+        session.user.permissions = token.permissions;
+      }
+      return session;
+    },
+  },
+};
+```
+
+### Middleware für Rollenschutz
+```typescript
+// middleware.ts
+import { withAuth } from 'next-auth/middleware';
+
+export default withAuth((req) => {
+  const role = req.nextauth.token?.role;
+  const path = req.nextUrl.pathname;
+
+  // Admin Center Zugriff
+  if (path.startsWith('/admin') && !['AUSBILDER', 'ADMIN'].includes(role)) {
+    return Response.redirect(new URL('/login', req.url));
+  }
+
+  // Spezifische Admin-Routen
+  if (path.startsWith('/admin/users') && role !== 'ADMIN') {
+    return Response.redirect(new URL('/admin/dashboard', req.url));
+  }
+
+  // Globale Einstellungen
+  if (path.startsWith('/admin/settings/global') && role !== 'ADMIN') {
+    return Response.redirect(new URL('/admin/settings', req.url));
+  }
+}, {
+  pages: { signIn: '/login' },
+});
+
+export const config = { 
+  matcher: [
+    '/admin/:path*',
+    '/api/admin/:path*'
+  ] 
+};
+```
+
+### Prisma Schema für Rollen
+```prisma
+// prisma/schema.prisma
+enum UserRole {
+  AZUBI
+  AUSBILDER
+  ADMIN
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String?
+  role        UserRole @default(AZUBI)
+  permissions Permission[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  users       User[]
+}
+```
+
+## Admin Center Struktur
+
+### Routing-Struktur
+```
+/app/admin/
+├── dashboard/
+│   └── page.tsx          # Übersicht-Dashboard
+├── analytics/
+│   ├── page.tsx          # Leistungsanalyse
+│   └── components/
+│       ├── AnalyticsChart.tsx
+│       └── FilterPanel.tsx
+├── cms/
+│   ├── page.tsx          # Content Management
+│   └── components/
+│       ├── ModuleEditor.tsx
+│       └── FileUpload.tsx
+├── recommendations/
+│   └── page.tsx          # Empfehlungs-Engine
+├── users/
+│   └── page.tsx          # User-Management (nur ADMIN)
+├── community/
+│   └── page.tsx          # Community-Moderation
+└── settings/
+    ├── page.tsx          # Einstellungen
+    └── components/
+        ├── FeatureToggles.tsx
+        └── AuditLogs.tsx
+```
+
+### Dashboard-Komponente
+```typescript
+// app/admin/dashboard/page.tsx
+'use client';
+
+import { useSession } from 'next-auth/react';
+import { Card, Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/shadcn';
+import { AnalyticsChart } from '@/components/admin/AnalyticsChart';
+import { OverviewMetrics } from '@/components/admin/OverviewMetrics';
+import { AlertsPanel } from '@/components/admin/AlertsPanel';
+
+export default function AdminDashboard() {
+  const { data: session, status } = useSession();
+
+  if (status === 'loading') {
+    return <div>Laden...</div>;
+  }
+
+  if (!['AUSBILDER', 'ADMIN'].includes(session?.user?.role)) {
+    return <div>Zugriff verweigert</div>;
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+        <div className="text-sm text-muted-foreground">
+          Rolle: {session.user.role}
+        </div>
+      </div>
+
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="overview">Übersicht</TabsTrigger>
+          <TabsTrigger value="analytics">Analysen</TabsTrigger>
+          <TabsTrigger value="alerts">Alerts</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-4">
+          <OverviewMetrics />
+        </TabsContent>
+
+        <TabsContent value="analytics">
+          <Card className="p-6">
+            <AnalyticsChart />
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="alerts">
+          <AlertsPanel />
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+```
+
+## Admin-Komponenten
+
+### Analytics Chart
+```typescript
+// components/admin/AnalyticsChart.tsx
+'use client';
+
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/shadcn';
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts';
+
+interface AnalyticsData {
+  module: string;
+  completionRate: number;
+  averageScore: number;
+  difficulty: 'easy' | 'medium' | 'hard';
+}
+
+export function AnalyticsChart() {
+  const data: AnalyticsData[] = [
+    { module: 'Grundlagen', completionRate: 85, averageScore: 78, difficulty: 'easy' },
+    { module: 'Fortgeschritten', completionRate: 72, averageScore: 65, difficulty: 'medium' },
+    { module: 'Experte', completionRate: 58, averageScore: 52, difficulty: 'hard' },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Modul-Performance</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={data}>
+            <XAxis dataKey="module" />
+            <YAxis />
+            <Tooltip />
+            <Bar dataKey="completionRate" fill="#3b82f6" name="Abschlussrate (%)" />
+            <Bar dataKey="averageScore" fill="#10b981" name="Durchschnittsnote" />
+          </BarChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+### User Management (nur ADMIN)
+```typescript
+// app/admin/users/page.tsx
+'use client';
+
+import { useSession } from 'next-auth/react';
+import { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/shadcn';
+import { Button } from '@/components/ui/shadcn';
+import { Input } from '@/components/ui/shadcn';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/shadcn';
+import { Badge } from '@/components/ui/shadcn';
+
+export default function UserManagement() {
+  const { data: session } = useSession();
+  const [searchTerm, setSearchTerm] = useState('');
+
+  if (session?.user?.role !== 'ADMIN') {
+    return <div>Zugriff verweigert - Nur für Administratoren</div>;
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Benutzerverwaltung</h1>
+        <Button>Neuen Benutzer erstellen</Button>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Benutzer durchsuchen</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Input
+            placeholder="Nach Namen oder E-Mail suchen..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="max-w-md"
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Alle Benutzer</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>E-Mail</TableHead>
+                <TableHead>Rolle</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Aktionen</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {/* User-Daten werden hier gerendert */}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+## API-Endpunkte
+
+### Admin Analytics API
+```typescript
+// app/api/v1/admin/analytics/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session || !['AUSBILDER', 'ADMIN'].includes(session.user.role)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const groupId = searchParams.get('groupId');
+    const timeRange = searchParams.get('timeRange') || '30d';
+
+    // Analytics-Daten abrufen
+    const analytics = await getAnalyticsData(groupId, timeRange);
+
+    return NextResponse.json({
+      success: true,
+      data: analytics,
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error) {
+    console.error('Analytics API Error:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+
+async function getAnalyticsData(groupId: string | null, timeRange: string) {
+  // Implementierung der Analytics-Logik
+  return {
+    moduleCompletion: [],
+    userEngagement: [],
+    performanceMetrics: {},
+  };
+}
+```
+
+### User Management API
+```typescript
+// app/api/v1/admin/users/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { z } from 'zod';
+
+const createUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(2),
+  role: z.enum(['AZUBI', 'AUSBILDER', 'ADMIN']),
+  groupId: z.string().optional(),
+});
+
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (session?.user?.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const validatedData = createUserSchema.parse(body);
+
+    // Benutzer erstellen
+    const user = await prisma.user.create({
+      data: {
+        email: validatedData.email,
+        name: validatedData.name,
+        role: validatedData.role,
+        groupId: validatedData.groupId,
+      },
+    });
+
+    // Audit-Log erstellen
+    await prisma.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: 'USER_CREATED',
+        targetUserId: user.id,
+        details: `Benutzer ${user.email} mit Rolle ${user.role} erstellt`,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      user,
+    }, { status: 201 });
+
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Validation Error', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('User Creation Error:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## Audit-Logging
+
+### Audit-Log Schema
+```prisma
+// prisma/schema.prisma
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String   // Wer hat die Aktion ausgeführt
+  targetUserId String? // Auf wen bezieht sich die Aktion
+  action      String   // Was wurde gemacht
+  details     String?  // Zusätzliche Details
+  ipAddress   String?  // IP-Adresse (gehashed)
+  userAgent   String?  // Browser/Client-Info
+  createdAt   DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id])
+  targetUser  User?    @relation("TargetUser", fields: [targetUserId], references: [id])
+}
+```
+
+### Audit-Log Service
+```typescript
+// lib/services/audit-logger.ts
+import { prisma } from '@/lib/prisma';
+import { hash } from 'bcryptjs';
+
+export class AuditLogger {
+  static async log(
+    userId: string,
+    action: string,
+    details?: string,
+    targetUserId?: string,
+    request?: Request
+  ) {
+    try {
+      const ipAddress = request?.headers.get('x-forwarded-for') || 
+                       request?.headers.get('x-real-ip') || 
+                       'unknown';
+      
+      const userAgent = request?.headers.get('user-agent') || 'unknown';
+
+      // IP-Adresse hashen für Datenschutz
+      const hashedIP = await hash(ipAddress, 10);
+
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action,
+          details,
+          targetUserId,
+          ipAddress: hashedIP,
+          userAgent,
+        },
+      });
+    } catch (error) {
+      console.error('Audit Logging Error:', error);
+      // Nicht den Hauptprozess unterbrechen
+    }
+  }
+}
+```
+
+## Feature Toggles
+
+### Feature Toggle System
+```typescript
+// lib/features/feature-toggles.ts
+interface FeatureToggle {
+  name: string;
+  enabled: boolean;
+  description: string;
+  roleRequired?: 'AUSBILDER' | 'ADMIN';
+}
+
+export const featureToggles: FeatureToggle[] = [
+  {
+    name: 'GAMIFICATION_ENABLED',
+    enabled: process.env.GAMIFICATION_ENABLED === 'true',
+    description: 'Aktiviert Gamification-Features (Punkte, Badges)',
+    roleRequired: 'AUSBILDER',
+  },
+  {
+    name: 'AI_RECOMMENDATIONS_ENABLED',
+    enabled: process.env.AI_RECOMMENDATIONS_ENABLED === 'true',
+    description: 'Aktiviert KI-gestützte Lernempfehlungen',
+    roleRequired: 'AUSBILDER',
+  },
+  {
+    name: 'COMMUNITY_MODERATION_ENABLED',
+    enabled: process.env.COMMUNITY_MODERATION_ENABLED === 'true',
+    description: 'Aktiviert Community-Moderation',
+    roleRequired: 'AUSBILDER',
+  },
+  {
+    name: 'ADVANCED_ANALYTICS_ENABLED',
+    enabled: process.env.ADVANCED_ANALYTICS_ENABLED === 'true',
+    description: 'Aktiviert erweiterte Analytics',
+    roleRequired: 'ADMIN',
+  },
+];
+
+export function isFeatureEnabled(featureName: string, userRole?: string): boolean {
+  const toggle = featureToggles.find(t => t.name === featureName);
+  
+  if (!toggle) return false;
+  if (!toggle.enabled) return false;
+  
+  if (toggle.roleRequired && userRole) {
+    const roleHierarchy = { 'AZUBI': 1, 'AUSBILDER': 2, 'ADMIN': 3 };
+    const userRoleLevel = roleHierarchy[userRole as keyof typeof roleHierarchy] || 0;
+    const requiredRoleLevel = roleHierarchy[toggle.roleRequired];
+    
+    return userRoleLevel >= requiredRoleLevel;
+  }
+  
+  return true;
+}
+```
+
+## Umgebungsvariablen
+
+### .env Konfiguration
+```bash
+# .env
+# ========================================
+# ADMIN CENTER KONFIGURATION
+# ========================================
+ADMIN_CENTER_ENABLED=true
+ADMIN_CENTER_STRICT_MODE=false
+
+# Rollen-basierte Features
+GAMIFICATION_ENABLED=true
+AI_RECOMMENDATIONS_ENABLED=true
+COMMUNITY_MODERATION_ENABLED=true
+ADVANCED_ANALYTICS_ENABLED=true
+
+# Audit-Logging
+AUDIT_LOGGING_ENABLED=true
+AUDIT_LOG_RETENTION_DAYS=365
+
+# Admin Center Limits
+ADMIN_MAX_USERS_PER_PAGE=50
+ADMIN_MAX_ANALYTICS_DAYS=365
+ADMIN_RATE_LIMIT_PER_MINUTE=100
+
+# Feature Toggles für Rollen
+AUSBILDER_CAN_DELETE_USERS=false
+AUSBILDER_CAN_MODIFY_ROLES=false
+AUSBILDER_CAN_ACCESS_AUDIT_LOGS=false
+
+# Sicherheit
+ADMIN_SESSION_TIMEOUT_MINUTES=30
+ADMIN_REQUIRE_2FA=false
+ADMIN_IP_WHITELIST_ENABLED=false
+```
+
+## Testing
+
+### Admin Center Tests
+```typescript
+// __tests__/admin/admin-dashboard.test.tsx
+import { render, screen } from '@testing-library/react';
+import { useSession } from 'next-auth/react';
+import AdminDashboard from '@/app/admin/dashboard/page';
+
+// Mock NextAuth
+jest.mock('next-auth/react');
+
+describe('Admin Dashboard', () => {
+  it('zeigt Dashboard für AUSBILDER-Rolle', () => {
+    (useSession as jest.Mock).mockReturnValue({
+      data: { user: { role: 'AUSBILDER' } },
+      status: 'authenticated',
+    });
+
+    render(<AdminDashboard />);
+    
+    expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
+    expect(screen.getByText('Rolle: AUSBILDER')).toBeInTheDocument();
+  });
+
+  it('verweigert Zugriff für AZUBI-Rolle', () => {
+    (useSession as jest.Mock).mockReturnValue({
+      data: { user: { role: 'AZUBI' } },
+      status: 'authenticated',
+    });
+
+    render(<AdminDashboard />);
+    
+    expect(screen.getByText('Zugriff verweigert')).toBeInTheDocument();
+  });
+});
+```
+
+## Sicherheitsrichtlinien
+
+### Rollen-basierte Zugriffskontrolle
+- **AZUBI**: Kein Zugriff auf Admin Center
+- **AUSBILDER**: Zugriff auf Admin Center, aber keine User-Verwaltung
+- **ADMIN**: Vollzugriff auf alle Admin-Features
+
+### Audit-Logging
+- Alle Admin-Aktionen werden protokolliert
+- IP-Adressen werden gehashed gespeichert
+- User-Agent und Timestamp werden erfasst
+
+### Rate Limiting
+- Admin-APIs haben strengere Rate-Limits
+- Separate Limits für verschiedene Admin-Funktionen
+
+### Session-Management
+- Admin-Sessions haben kürzere Timeouts
+- Optional: 2FA für Admin-Accounts
+- IP-Whitelist für Admin-Zugriff (optional)
+
+## Nächste Schritte
+
+1. **RBAC implementieren**: Auth.js-Callbacks und Middleware
+2. **Admin Center UI**: Dashboard und Unterseiten mit shadcn/ui
+3. **API-Endpunkte**: Admin-spezifische Routen mit Rollenschutz
+4. **Audit-Logging**: Vollständige Protokollierung aller Admin-Aktionen
+5. **Feature Toggles**: Rollen-basierte Feature-Aktivierung
+6. **Testing**: Unit- und Integration-Tests für Admin-Features
+7. **Dokumentation**: Admin-Handbuch und API-Dokumentation
+description:
+globs:
+alwaysApply: true
+---

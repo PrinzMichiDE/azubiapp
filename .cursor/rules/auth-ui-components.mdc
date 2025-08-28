@@ -1,0 +1,704 @@
+# Authentifizierungs-UI-Komponenten
+
+## UI-Überblick
+- **shadcn/ui**: Moderne, zugängliche Komponenten
+- **Responsive Design**: Mobile-first Ansatz
+- **Barrierefreiheit**: WCAG 2.1 Compliance
+- **Internationalisierung**: Deutsch und Englisch
+- **Konsistenz**: Einheitliches Design-System
+
+## Login-Seite
+```typescript
+// app/(auth)/login/page.tsx
+'use client';
+
+import { useState } from 'react';
+import { signIn, getSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Separator } from '@/components/ui/separator';
+import { Icons } from '@/components/ui/icons';
+import Link from 'next/link';
+
+export default function LoginPage() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [formData, setFormData] = useState({
+    email: '',
+    password: ''
+  });
+  
+  const router = useRouter();
+  const isBasicAuthEnabled = process.env.NEXT_PUBLIC_AUTH_BASIC_ENABLED === 'true';
+  const isEntraEnabled = process.env.NEXT_PUBLIC_AUTH_ENTRA_ENABLED === 'true';
+
+  const handleBasicLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const result = await signIn('credentials', {
+        email: formData.email,
+        password: formData.password,
+        redirect: false
+      });
+
+      if (result?.error) {
+        setError(getErrorMessage(result.error));
+      } else {
+        // Erfolgreicher Login
+        const session = await getSession();
+        if (session?.user?.role === 'ADMIN') {
+          router.push('/admin/dashboard');
+        } else if (session?.user?.role === 'AUSBILDER') {
+          router.push('/trainer/dashboard');
+        } else {
+          router.push('/dashboard');
+        }
+      }
+    } catch (error) {
+      setError('Ein unerwarteter Fehler ist aufgetreten');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEntraLogin = async () => {
+    setIsLoading(true);
+    try {
+      await signIn('azure-ad', { callbackUrl: '/dashboard' });
+    } catch (error) {
+      setError('Fehler bei der Microsoft-Anmeldung');
+      setIsLoading(false);
+    }
+  };
+
+  const getErrorMessage = (error: string): string => {
+    const errorMessages: Record<string, string> = {
+      'Ungültige Anmeldedaten': 'E-Mail oder Passwort ist falsch',
+      'E-Mail-Adresse muss verifiziert werden': 'Bitte bestätigen Sie Ihre E-Mail-Adresse',
+      'Konto deaktiviert': 'Ihr Konto wurde deaktiviert. Kontaktieren Sie den Administrator.'
+    };
+    return errorMessages[error] || error;
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1 text-center">
+          <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+            <Icons.graduationCap className="w-6 h-6 text-blue-600" />
+          </div>
+          <CardTitle className="text-2xl font-bold">Willkommen zurück</CardTitle>
+          <CardDescription>
+            Melden Sie sich in Ihrem Azubi LXP Konto an
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          {/* Basis-Authentifizierung */}
+          {isBasicAuthEnabled && (
+            <form onSubmit={handleBasicLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">E-Mail-Adresse</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="ihre.email@beispiel.de"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  required
+                  disabled={isLoading}
+                  className="transition-colors focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">Passwort</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Ihr Passwort"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  required
+                  disabled={isLoading}
+                  className="transition-colors focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-sm">
+                <Link 
+                  href="/forgot-password" 
+                  className="text-blue-600 hover:text-blue-800 transition-colors"
+                >
+                  Passwort vergessen?
+                </Link>
+              </div>
+
+              <Button 
+                type="submit" 
+                className="w-full bg-blue-600 hover:bg-blue-700 transition-colors"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                    Anmeldung läuft...
+                  </>
+                ) : (
+                  'Anmelden'
+                )}
+              </Button>
+            </form>
+          )}
+
+          {/* OAuth-Optionen */}
+          {isBasicAuthEnabled && isEntraEnabled && (
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <Separator className="w-full" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  Oder anmelden mit
+                </span>
+              </div>
+            </div>
+          )}
+
+          {isEntraEnabled && (
+            <Button
+              variant="outline"
+              className="w-full border-gray-300 hover:bg-gray-50 transition-colors"
+              onClick={handleEntraLogin}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Icons.microsoft className="mr-2 h-4 w-4" />
+              )}
+              Mit Microsoft anmelden
+            </Button>
+          )}
+
+          {/* Fehlermeldungen */}
+          {error && (
+            <Alert variant="destructive">
+              <Icons.alertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Registrierung-Link */}
+          <div className="text-center text-sm">
+            <span className="text-muted-foreground">
+              Noch kein Konto?{' '}
+            </span>
+            {isBasicAuthEnabled ? (
+              <Link 
+                href="/register" 
+                className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
+              >
+                Jetzt registrieren
+              </Link>
+            ) : (
+              <span className="text-muted-foreground">
+                Registrierung deaktiviert
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+## Registrierungs-Seite
+```typescript
+// app/(auth)/register/page.tsx
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Icons } from '@/components/ui/icons';
+import Link from 'next/link';
+import { z } from 'zod';
+
+const registerSchema = z.object({
+  email: z.string().email('Ungültige E-Mail-Adresse'),
+  password: z.string()
+    .min(8, 'Passwort muss mindestens 8 Zeichen lang sein')
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'Passwort muss Groß- und Kleinbuchstaben sowie Zahlen enthalten'),
+  passwordConfirm: z.string(),
+  firstName: z.string().min(2, 'Vorname muss mindestens 2 Zeichen lang sein'),
+  lastName: z.string().min(2, 'Nachname muss mindestens 2 Zeichen lang sein'),
+  companyCode: z.string().optional(),
+  acceptTerms: z.boolean().refine(val => val === true, 'Sie müssen den AGB zustimmen'),
+  acceptPrivacy: z.boolean().refine(val => val === true, 'Sie müssen der Datenschutzerklärung zustimmen')
+}).refine((data) => data.password === data.passwordConfirm, {
+  message: "Passwörter stimmen nicht überein",
+  path: ["passwordConfirm"]
+});
+
+export default function RegisterPage() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    passwordConfirm: '',
+    firstName: '',
+    lastName: '',
+    companyCode: '',
+    acceptTerms: false,
+    acceptPrivacy: false
+  });
+  
+  const router = useRouter();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      // Validierung
+      const validatedData = registerSchema.parse(formData);
+
+      const response = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(validatedData)
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setSuccess(result.message);
+        if (!result.requiresVerification) {
+          // Automatische Weiterleitung nach 2 Sekunden
+          setTimeout(() => router.push('/login'), 2000);
+        }
+      } else {
+        if (result.details) {
+          setError(result.details.map((d: any) => d.message).join(', '));
+        } else {
+          setError(result.error || 'Registrierung fehlgeschlagen');
+        }
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        setError(error.errors.map(e => e.message).join(', '));
+      } else {
+        setError('Ein unerwarteter Fehler ist aufgetreten');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleInputChange = (field: string, value: string | boolean) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-emerald-100 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1 text-center">
+          <div className="mx-auto w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mb-4">
+            <Icons.userPlus className="w-6 h-6 text-green-600" />
+          </div>
+          <CardTitle className="text-2xl font-bold">Konto erstellen</CardTitle>
+          <CardDescription>
+            Werden Sie Teil der Azubi LXP Community
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Persönliche Daten */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">Vorname</Label>
+                <Input
+                  id="firstName"
+                  value={formData.firstName}
+                  onChange={(e) => handleInputChange('firstName', e.target.value)}
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Nachname</Label>
+                <Input
+                  id="lastName"
+                  value={formData.lastName}
+                  onChange={(e) => handleInputChange('lastName', e.target.value)}
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="email">E-Mail-Adresse</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="ihre.email@beispiel.de"
+                value={formData.email}
+                onChange={(e) => handleInputChange('email', e.target.value)}
+                required
+                disabled={isLoading}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="companyCode">Unternehmenscode (optional)</Label>
+              <Input
+                id="companyCode"
+                placeholder="Falls Sie einen haben"
+                value={formData.companyCode}
+                onChange={(e) => handleInputChange('companyCode', e.target.value)}
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Falls Ihr Unternehmen einen Registrierungscode bereitstellt
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Passwort</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Mindestens 8 Zeichen"
+                value={formData.password}
+                onChange={(e) => handleInputChange('password', e.target.value)}
+                required
+                disabled={isLoading}
+              />
+              <div className="text-xs text-muted-foreground space-y-1">
+                <p>Das Passwort muss enthalten:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li className={formData.password.length >= 8 ? 'text-green-600' : 'text-gray-500'}>
+                    Mindestens 8 Zeichen
+                  </li>
+                  <li className={/[a-z]/.test(formData.password) ? 'text-green-600' : 'text-gray-500'}>
+                    Mindestens einen Kleinbuchstaben
+                  </li>
+                  <li className={/[A-Z]/.test(formData.password) ? 'text-green-600' : 'text-gray-500'}>
+                    Mindestens einen Großbuchstaben
+                  </li>
+                  <li className={/\d/.test(formData.password) ? 'text-green-600' : 'text-gray-500'}>
+                    Mindestens eine Zahl
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="passwordConfirm">Passwort bestätigen</Label>
+              <Input
+                id="passwordConfirm"
+                type="password"
+                placeholder="Passwort wiederholen"
+                value={formData.passwordConfirm}
+                onChange={(e) => handleInputChange('passwordConfirm', e.target.value)}
+                required
+                disabled={isLoading}
+              />
+            </div>
+
+            {/* AGB und Datenschutz */}
+            <div className="space-y-3">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="acceptTerms"
+                  checked={formData.acceptTerms}
+                  onCheckedChange={(checked) => handleInputChange('acceptTerms', checked as boolean)}
+                  disabled={isLoading}
+                />
+                <Label htmlFor="acceptTerms" className="text-sm">
+                  Ich akzeptiere die{' '}
+                  <Link href="/terms" className="text-blue-600 hover:underline">
+                    Allgemeinen Geschäftsbedingungen
+                  </Link>
+                </Label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="acceptPrivacy"
+                  checked={formData.acceptPrivacy}
+                  onCheckedChange={(checked) => handleInputChange('acceptPrivacy', checked as boolean)}
+                  disabled={isLoading}
+                />
+                <Label htmlFor="acceptPrivacy" className="text-sm">
+                  Ich akzeptiere die{' '}
+                  <Link href="/privacy" className="text-blue-600 hover:underline">
+                    Datenschutzerklärung
+                  </Link>
+                </Label>
+              </div>
+            </div>
+
+            <Button 
+              type="submit" 
+              className="w-full bg-green-600 hover:bg-green-700 transition-colors"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                  Registrierung läuft...
+                </>
+              ) : (
+                'Konto erstellen'
+              )}
+            </Button>
+          </form>
+
+          {/* Fehlermeldungen */}
+          {error && (
+            <Alert variant="destructive">
+              <Icons.alertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Erfolgsmeldungen */}
+          {success && (
+            <Alert className="border-green-200 bg-green-50 text-green-800">
+              <Icons.checkCircle className="h-4 w-4" />
+              <AlertDescription>{success}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Login-Link */}
+          <div className="text-center text-sm">
+            <span className="text-muted-foreground">
+              Bereits ein Konto?{' '}
+            </span>
+            <Link 
+              href="/login" 
+              className="text-green-600 hover:text-green-800 font-medium transition-colors"
+            >
+              Jetzt anmelden
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+## Passwort-Reset-Seite
+```typescript
+// app/(auth)/forgot-password/page.tsx
+'use client';
+
+import { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Icons } from '@/components/ui/icons';
+import Link from 'next/link';
+
+export default function ForgotPasswordPage() {
+  const [email, setEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setIsSubmitted(true);
+      } else {
+        setError(result.error || 'Fehler bei der Anfrage');
+      }
+    } catch (error) {
+      setError('Ein unerwarteter Fehler ist aufgetreten');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isSubmitted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="space-y-1 text-center">
+            <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+              <Icons.mail className="w-6 h-6 text-blue-600" />
+            </div>
+            <CardTitle className="text-xl font-bold">E-Mail gesendet</CardTitle>
+            <CardDescription>
+              Falls ein Konto mit dieser E-Mail-Adresse existiert, haben wir Ihnen eine E-Mail mit Anweisungen zum Zurücksetzen Ihres Passworts gesendet.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center">
+            <Link href="/login">
+              <Button variant="outline" className="w-full">
+                Zurück zur Anmeldung
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1 text-center">
+          <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+            <Icons.lock className="w-6 h-6 text-blue-600" />
+          </div>
+          <CardTitle className="text-xl font-bold">Passwort vergessen?</CardTitle>
+          <CardDescription>
+            Geben Sie Ihre E-Mail-Adresse ein und wir senden Ihnen einen Link zum Zurücksetzen Ihres Passworts.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">E-Mail-Adresse</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="ihre.email@beispiel.de"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={isLoading}
+              />
+            </div>
+
+            <Button 
+              type="submit" 
+              className="w-full bg-blue-600 hover:bg-blue-700 transition-colors"
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                  Wird gesendet...
+                </>
+              ) : (
+                'Link senden'
+              )}
+            </Button>
+          </form>
+
+          {error && (
+            <Alert variant="destructive">
+              <Icons.alertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="text-center text-sm">
+            <Link 
+              href="/login" 
+              className="text-blue-600 hover:text-blue-800 transition-colors"
+            >
+              Zurück zur Anmeldung
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+## Auth-Layout
+```typescript
+// app/(auth)/layout.tsx
+import { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Authentifizierung - Azubi LXP',
+  description: 'Anmelden oder registrieren Sie sich für die Azubi Learning Experience Platform',
+};
+
+export default function AuthLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      {children}
+    </div>
+  );
+}
+```
+
+## Icons-Komponente
+```typescript
+// components/ui/icons.tsx
+import {
+  AlertCircle,
+  CheckCircle,
+  GraduationCap,
+  Lock,
+  Mail,
+  Microsoft,
+  Spinner,
+  UserPlus,
+  type LucideIcon,
+} from 'lucide-react';
+
+export type Icon = LucideIcon;
+
+export const Icons = {
+  alertCircle: AlertCircle,
+  checkCircle: CheckCircle,
+  graduationCap: GraduationCap,
+  lock: Lock,
+  mail: Mail,
+  microsoft: Microsoft,
+  spinner: Spinner,
+  userPlus: UserPlus,
+};
+```
+description:
+globs:
+alwaysApply: true
+---

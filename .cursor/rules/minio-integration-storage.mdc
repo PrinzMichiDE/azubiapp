@@ -1,0 +1,911 @@
+# MinIO-Integration als S3-Alternative
+
+## Übersicht
+
+MinIO ist ein Open-Source-Objektspeicher, der S3-kompatible APIs bietet und als Alternative zu AWS S3 in der LXP-Plattform verwendet wird. Es ermöglicht lokale oder Cloud-basierte Speicherung von ARP-PDFs und generierten Inhalten mit DSGVO-Konformität und Kosteneffizienz.
+
+## Ziele
+
+- **Kosteneffizienz**: Keine AWS S3-Gebühren bei lokalem Betrieb
+- **DSGVO-Konformität**: Vollständige Kontrolle über Datenstandort
+- **S3-Kompatibilität**: Nahtlose Integration mit bestehenden S3-Clients
+- **Skalierbarkeit**: Unterstützung für verteilte Speicherung
+- **Sicherheit**: Verschlüsselte Verbindungen und Bucket-Policies
+- **Flexibilität**: Lokaler Betrieb oder Cloud-Deployment
+
+## MinIO-Setup und Konfiguration
+
+### Docker Compose Integration
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: lxp-minio
+    ports:
+      - "9000:9000"      # API-Port
+      - "9001:9001"      # Web-Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+      - ./minio/config:/root/.minio
+    networks:
+      - lxp-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+
+  # MinIO-Client für Initialisierung
+  minio-init:
+    image: minio/mc:latest
+    container_name: lxp-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+    command: >
+      sh -c "
+        sleep 10 &&
+        mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} &&
+        mc mb local/lxp-arp &&
+        mc mb local/lxp-content &&
+        mc policy set public local/lxp-content &&
+        mc policy set private local/lxp-arp &&
+        echo 'MinIO-Buckets erfolgreich erstellt'
+      "
+    networks:
+      - lxp-network
+    restart: "no"
+
+volumes:
+  minio-data:
+    driver: local
+
+networks:
+  lxp-network:
+    driver: bridge
+```
+
+### MinIO-Client Konfiguration
+```typescript
+// lib/minio/client.ts
+import { Client as MinioClient } from 'minio';
+
+export class MinioService {
+  private client: MinioClient;
+  private readonly arpBucket: string;
+  private readonly contentBucket: string;
+
+  constructor() {
+    this.client = new MinioClient({
+      endPoint: process.env.MINIO_ENDPOINT || 'localhost',
+      port: parseInt(process.env.MINIO_PORT || '9000'),
+      useSSL: process.env.MINIO_USE_SSL === 'true',
+      accessKey: process.env.MINIO_ACCESS_KEY || '',
+      secretKey: process.env.MINIO_SECRET_KEY || '',
+    });
+
+    this.arpBucket = process.env.MINIO_ARP_BUCKET || 'lxp-arp';
+    this.contentBucket = process.env.MINIO_CONTENT_BUCKET || 'lxp-content';
+  }
+
+  async initializeBuckets(): Promise<void> {
+    try {
+      // ARP-Bucket für PDFs (privat)
+      const arpExists = await this.client.bucketExists(this.arpBucket);
+      if (!arpExists) {
+        await this.client.makeBucket(this.arpBucket, 'eu-central-1');
+        await this.client.setBucketPolicy(this.arpBucket, this.getPrivatePolicy());
+        console.log(`Bucket ${this.arpBucket} erstellt und privat gesetzt`);
+      }
+
+      // Content-Bucket für generierte Inhalte (öffentlich lesbar)
+      const contentExists = await this.client.bucketExists(this.contentBucket);
+      if (!contentExists) {
+        await this.client.makeBucket(this.contentBucket, 'eu-central-1');
+        await this.client.setBucketPolicy(this.contentBucket, this.getPublicReadPolicy());
+        console.log(`Bucket ${this.contentBucket} erstellt und öffentlich lesbar gesetzt`);
+      }
+    } catch (error) {
+      console.error('Fehler bei der MinIO-Initialisierung:', error);
+      throw error;
+    }
+  }
+
+  private getPrivatePolicy(): string {
+    return JSON.stringify({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Deny',
+          Principal: '*',
+          Action: ['s3:*'],
+          Resource: [`arn:aws:s3:::${this.arpBucket}/*`],
+          Condition: {
+            StringNotEquals: {
+              'aws:PrincipalArn': [
+                `arn:aws:iam::*:user/${process.env.MINIO_ACCESS_KEY}`,
+                `arn:aws:iam::*:role/lxp-course-service`
+              ]
+            }
+          }
+        }
+      ]
+    });
+  }
+
+  private getPublicReadPolicy(): string {
+    return JSON.stringify({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Effect: 'Allow',
+          Principal: '*',
+          Action: ['s3:GetObject'],
+          Resource: [`arn:aws:s3:::${this.contentBucket}/*`]
+        }
+      ]
+    });
+  }
+
+  // ARP-PDFs speichern
+  async uploadARP(beruf: string, version: string, pdfBuffer: Buffer): Promise<string> {
+    const objectName = `arp/${beruf}/${version}.pdf`;
+    
+    try {
+      await this.client.putObject(
+        this.arpBucket,
+        objectName,
+        pdfBuffer,
+        pdfBuffer.length,
+        {
+          'Content-Type': 'application/pdf',
+          'x-amz-meta-beruf': beruf,
+          'x-amz-meta-version': version,
+          'x-amz-meta-uploaded-at': new Date().toISOString(),
+        }
+      );
+
+      return objectName;
+    } catch (error) {
+      console.error('Fehler beim Upload des ARP-PDFs:', error);
+      throw new Error('ARP-Upload fehlgeschlagen');
+    }
+  }
+
+  // Generierte Inhalte speichern
+  async uploadContent(
+    beruf: string,
+    moduleId: string,
+    contentType: string,
+    content: Buffer,
+    metadata?: Record<string, string>
+  ): Promise<string> {
+    const extension = this.getContentExtension(contentType);
+    const objectName = `content/${beruf}/${moduleId}/${contentType}.${extension}`;
+    
+    try {
+      const meta = {
+        'Content-Type': this.getContentMimeType(contentType),
+        'x-amz-meta-beruf': beruf,
+        'x-amz-meta-module-id': moduleId,
+        'x-amz-meta-content-type': contentType,
+        'x-amz-meta-uploaded-at': new Date().toISOString(),
+        ...metadata,
+      };
+
+      await this.client.putObject(
+        this.contentBucket,
+        objectName,
+        content,
+        content.length,
+        meta
+      );
+
+      return objectName;
+    } catch (error) {
+      console.error('Fehler beim Upload des Inhalts:', error);
+      throw new Error('Content-Upload fehlgeschlagen');
+    }
+  }
+
+  // Presigned URLs für sicheren Zugriff
+  async getPresignedUrl(bucket: string, objectName: string, expiresIn: number = 3600): Promise<string> {
+    try {
+      return await this.client.presignedGetObject(bucket, objectName, expiresIn);
+    } catch (error) {
+      console.error('Fehler beim Generieren der Presigned URL:', error);
+      throw new Error('Presigned URL konnte nicht generiert werden');
+    }
+  }
+
+  // Inhalte löschen
+  async deleteContent(bucket: string, objectName: string): Promise<void> {
+    try {
+      await this.client.removeObject(bucket, objectName);
+    } catch (error) {
+      console.error('Fehler beim Löschen des Inhalts:', error);
+      throw new Error('Content-Löschung fehlgeschlagen');
+    }
+  }
+
+  // Bucket-Statistiken abrufen
+  async getBucketStats(bucket: string): Promise<BucketStats> {
+    try {
+      const objects = this.client.listObjects(bucket, '', true);
+      let totalSize = 0;
+      let objectCount = 0;
+
+      for await (const obj of objects) {
+        totalSize += obj.size;
+        objectCount++;
+      }
+
+      return {
+        bucket,
+        objectCount,
+        totalSize,
+        lastModified: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error('Fehler beim Abrufen der Bucket-Statistiken:', error);
+      throw new Error('Bucket-Statistiken konnten nicht abgerufen werden');
+    }
+  }
+
+  private getContentExtension(contentType: string): string {
+    const extensions: Record<string, string> = {
+      'video': 'mp4',
+      'image': 'png',
+      'audio': 'mp3',
+      'document': 'pdf',
+      'quiz': 'json',
+      'simulation': 'html',
+    };
+    return extensions[contentType] || 'bin';
+  }
+
+  private getContentMimeType(contentType: string): string {
+    const mimeTypes: Record<string, string> = {
+      'video': 'video/mp4',
+      'image': 'image/png',
+      'audio': 'audio/mpeg',
+      'document': 'application/pdf',
+      'quiz': 'application/json',
+      'simulation': 'text/html',
+    };
+    return mimeTypes[contentType] || 'application/octet-stream';
+  }
+}
+
+interface BucketStats {
+  bucket: string;
+  objectCount: number;
+  totalSize: number;
+  lastModified: string;
+}
+
+export const minioService = new MinioService();
+```
+
+## ARP-Verarbeitung mit MinIO
+
+### PDF-Upload und Verarbeitung
+```typescript
+// lib/services/arp-processor-minio.ts
+import { minioService } from '@/lib/minio/client';
+import { pdfParser } from '@/lib/services/pdf-parser';
+import { arpAIAnalyzer } from '@/lib/services/arp-ai-analyzer';
+import { courseGenerator } from '@/lib/services/course-generator';
+import { prisma } from '@/lib/prisma';
+import { auditLogger } from '@/lib/services/audit-logger';
+
+export class ARPProcessorMinio {
+  async processFromURL(arpUrl: string, beruf: string, version: string): Promise<ProcessingResult> {
+    try {
+      // 1. PDF herunterladen
+      const pdfBuffer = await this.downloadPDF(arpUrl);
+      
+      // 2. In MinIO speichern
+      const pdfPath = await minioService.uploadARP(beruf, version, pdfBuffer);
+      
+      // 3. Training Plan in Datenbank speichern
+      const trainingPlan = await prisma.trainingPlan.create({
+        data: {
+          beruf,
+          arpUrl,
+          version,
+          pdfPath,
+          status: 'processing',
+        },
+      });
+
+      // 4. PDF parsen
+      const parsedARP = await pdfParser.parseFromBuffer(pdfBuffer);
+      
+      // 5. KI-Analyse
+      const courseStructure = await arpAIAnalyzer.analyzeARP(parsedARP, beruf);
+      
+      // 6. Kurs generieren
+      const generatedCourse = await courseGenerator.generateCourse(beruf, courseStructure);
+      
+      // 7. Inhalte in MinIO speichern
+      await this.storeGeneratedContent(beruf, generatedCourse);
+      
+      // 8. Training Plan aktualisieren
+      await prisma.trainingPlan.update({
+        where: { id: trainingPlan.id },
+        data: {
+          status: 'completed',
+          courseId: generatedCourse.courseId,
+        },
+      });
+
+      // 9. Audit-Log erstellen
+      await auditLogger.log('arp_processed_successfully', {
+        beruf,
+        version,
+        courseId: generatedCourse.courseId,
+        pdfPath,
+        timestamp: new Date().toISOString(),
+      });
+
+      return {
+        success: true,
+        courseId: generatedCourse.courseId,
+        pdfPath,
+        message: 'ARP erfolgreich verarbeitet',
+      };
+
+    } catch (error) {
+      console.error('Fehler bei der ARP-Verarbeitung:', error);
+      
+      // Fehler protokollieren
+      await auditLogger.log('arp_processing_failed', {
+        beruf,
+        version,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+
+      throw error;
+    }
+  }
+
+  private async downloadPDF(url: string): Promise<Buffer> {
+    try {
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    } catch (error) {
+      console.error('Fehler beim Download des PDFs:', error);
+      throw new Error('PDF-Download fehlgeschlagen');
+    }
+  }
+
+  private async storeGeneratedContent(beruf: string, course: GeneratedCourse): Promise<void> {
+    for (const module of course.modules) {
+      for (const content of module.contents) {
+        try {
+          const contentBuffer = this.contentToBuffer(content);
+          await minioService.uploadContent(
+            beruf,
+            module.id.toString(),
+            content.type,
+            contentBuffer,
+            {
+              'x-amz-meta-module-name': module.name,
+              'x-amz-meta-content-title': content.title,
+            }
+          );
+        } catch (error) {
+          console.error(`Fehler beim Speichern des Inhalts ${content.title}:`, error);
+          // Weiter machen, nicht den gesamten Prozess stoppen
+        }
+      }
+    }
+  }
+
+  private contentToBuffer(content: any): Buffer {
+    if (content.content instanceof Buffer) {
+      return content.content;
+    }
+    
+    if (typeof content.content === 'string') {
+      return Buffer.from(content.content, 'utf-8');
+    }
+    
+    return Buffer.from(JSON.stringify(content.content), 'utf-8');
+  }
+}
+
+interface ProcessingResult {
+  success: boolean;
+  courseId: number;
+  pdfPath: string;
+  message: string;
+}
+
+interface GeneratedCourse {
+  courseId: number;
+  modules: GeneratedModule[];
+}
+
+interface GeneratedModule {
+  id: number;
+  name: string;
+  contents: GeneratedContent[];
+}
+
+interface GeneratedContent {
+  type: string;
+  title: string;
+  content: any;
+}
+```
+
+## CMS-Service mit MinIO-Integration
+
+### Content Management Service
+```typescript
+// lib/services/cms-service-minio.ts
+import { minioService } from '@/lib/minio/client';
+import { prisma } from '@/lib/prisma';
+import { z } from 'zod';
+
+const uploadContentSchema = z.object({
+  beruf: z.string().min(1),
+  moduleId: z.string().min(1),
+  contentType: z.enum(['video', 'image', 'audio', 'document', 'quiz', 'simulation']),
+  content: z.any(),
+  metadata: z.record(z.string()).optional(),
+});
+
+export class CMSServiceMinio {
+  async uploadContent(data: z.infer<typeof uploadContentSchema>): Promise<ContentUploadResult> {
+    try {
+      const validatedData = uploadContentSchema.parse(data);
+      
+      // Content in MinIO speichern
+      const objectName = await minioService.uploadContent(
+        validatedData.beruf,
+        validatedData.moduleId,
+        validatedData.contentType,
+        validatedData.content,
+        validatedData.metadata
+      );
+
+      // Content-Metadaten in Datenbank speichern
+      const contentRecord = await prisma.content.create({
+        data: {
+          beruf: validatedData.beruf,
+          moduleId: validatedData.moduleId,
+          contentType: validatedData.contentType,
+          objectName,
+          metadata: validatedData.metadata || {},
+          uploadedAt: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        contentId: contentRecord.id,
+        objectName,
+        url: await this.generatePublicUrl(objectName),
+      };
+
+    } catch (error) {
+      console.error('Fehler beim Content-Upload:', error);
+      throw new Error('Content-Upload fehlgeschlagen');
+    }
+  }
+
+  async getContent(contentId: number): Promise<ContentInfo | null> {
+    try {
+      const content = await prisma.content.findUnique({
+        where: { id: contentId },
+      });
+
+      if (!content) {
+        return null;
+      }
+
+      // Presigned URL für privaten Zugriff generieren
+      const presignedUrl = await minioService.getPresignedUrl(
+        process.env.MINIO_CONTENT_BUCKET || 'lxp-content',
+        content.objectName
+      );
+
+      return {
+        ...content,
+        presignedUrl,
+        publicUrl: await this.generatePublicUrl(content.objectName),
+      };
+
+    } catch (error) {
+      console.error('Fehler beim Abrufen des Inhalts:', error);
+      throw new Error('Content konnte nicht abgerufen werden');
+    }
+  }
+
+  async deleteContent(contentId: number): Promise<void> {
+    try {
+      const content = await prisma.content.findUnique({
+        where: { id: contentId },
+      });
+
+      if (!content) {
+        throw new Error('Content nicht gefunden');
+      }
+
+      // Aus MinIO löschen
+      await minioService.deleteContent(
+        process.env.MINIO_CONTENT_BUCKET || 'lxp-content',
+        content.objectName
+      );
+
+      // Aus Datenbank löschen
+      await prisma.content.delete({
+        where: { id: contentId },
+      });
+
+    } catch (error) {
+      console.error('Fehler beim Löschen des Inhalts:', error);
+      throw new Error('Content konnte nicht gelöscht werden');
+    }
+  }
+
+  async getContentByModule(moduleId: string): Promise<ContentInfo[]> {
+    try {
+      const contents = await prisma.content.findMany({
+        where: { moduleId },
+        orderBy: { uploadedAt: 'desc' },
+      });
+
+      const contentInfos: ContentInfo[] = [];
+
+      for (const content of contents) {
+        const presignedUrl = await minioService.getPresignedUrl(
+          process.env.MINIO_CONTENT_BUCKET || 'lxp-content',
+          content.objectName
+        );
+
+        contentInfos.push({
+          ...content,
+          presignedUrl,
+          publicUrl: await this.generatePublicUrl(content.objectName),
+        });
+      }
+
+      return contentInfos;
+
+    } catch (error) {
+      console.error('Fehler beim Abrufen der Modul-Inhalte:', error);
+      throw new Error('Modul-Inhalte konnten nicht abgerufen werden');
+    }
+  }
+
+  private async generatePublicUrl(objectName: string): Promise<string> {
+    const baseUrl = process.env.MINIO_PUBLIC_URL || `http://${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`;
+    const bucket = process.env.MINIO_CONTENT_BUCKET || 'lxp-content';
+    return `${baseUrl}/${bucket}/${objectName}`;
+  }
+}
+
+interface ContentUploadResult {
+  success: boolean;
+  contentId: number;
+  objectName: string;
+  url: string;
+}
+
+interface ContentInfo {
+  id: number;
+  beruf: string;
+  moduleId: string;
+  contentType: string;
+  objectName: string;
+  metadata: Record<string, any>;
+  uploadedAt: Date;
+  presignedUrl: string;
+  publicUrl: string;
+}
+```
+
+## Admin-Interface für MinIO-Verwaltung
+
+### MinIO-Dashboard
+```typescript
+// app/admin/storage/minio/page.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/shadcn';
+import { Button } from '@/components/ui/shadcn';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/shadcn';
+import { Badge } from '@/components/ui/shadcn';
+import { Progress } from '@/components/ui/shadcn';
+
+export default function MinioDashboard() {
+  const { data: session } = useSession();
+  const [bucketStats, setBucketStats] = useState<BucketStats[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  if (session?.user?.role !== 'ADMIN') {
+    return <div>Zugriff verweigert - Nur für Administratoren</div>;
+  }
+
+  useEffect(() => {
+    fetchBucketStats();
+  }, []);
+
+  const fetchBucketStats = async () => {
+    try {
+      const response = await fetch('/api/v1/admin/storage/minio/stats');
+      if (response.ok) {
+        const stats = await response.json();
+        setBucketStats(stats.data);
+      }
+    } catch (error) {
+      console.error('Fehler beim Abrufen der Bucket-Statistiken:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  if (isLoading) {
+    return <div>Lade MinIO-Statistiken...</div>;
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">MinIO Storage Dashboard</h1>
+        <Button onClick={fetchBucketStats}>Aktualisieren</Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {bucketStats.map((bucket) => (
+          <Card key={bucket.bucket}>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>{bucket.bucket}</span>
+                <Badge variant={bucket.bucket === 'lxp-arp' ? 'destructive' : 'default'}>
+                  {bucket.bucket === 'lxp-arp' ? 'Privat' : 'Öffentlich'}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex justify-between text-sm">
+                <span>Objekte:</span>
+                <span className="font-medium">{bucket.objectCount}</span>
+              </div>
+              
+              <div className="flex justify-between text-sm">
+                <span>Größe:</span>
+                <span className="font-medium">{formatBytes(bucket.totalSize)}</span>
+              </div>
+              
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Speicherplatz</span>
+                  <span>{Math.round((bucket.totalSize / (1024 * 1024 * 1024)) * 100)}%</span>
+                </div>
+                <Progress value={Math.min((bucket.totalSize / (1024 * 1024 * 1024)) * 100, 100)} />
+              </div>
+              
+              <div className="text-xs text-muted-foreground">
+                Letzte Änderung: {new Date(bucket.lastModified).toLocaleDateString('de-DE')}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>MinIO-Verwaltung</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Button variant="outline" onClick={() => window.open('http://localhost:9001', '_blank')}>
+              MinIO-Console öffnen
+            </Button>
+            <Button variant="outline" onClick={fetchBucketStats}>
+              Statistiken aktualisieren
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+interface BucketStats {
+  bucket: string;
+  objectCount: number;
+  totalSize: number;
+  lastModified: string;
+}
+```
+
+## API-Endpunkte für MinIO-Verwaltung
+
+### MinIO-Statistiken API
+```typescript
+// app/api/v1/admin/storage/minio/stats/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { minioService } from '@/lib/minio/client';
+
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session || session.user.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Unauthorized - Nur für Administratoren' },
+        { status: 401 }
+      );
+    }
+
+    // Bucket-Statistiken abrufen
+    const arpStats = await minioService.getBucketStats('lxp-arp');
+    const contentStats = await minioService.getBucketStats('lxp-content');
+
+    return NextResponse.json({
+      success: true,
+      data: [arpStats, contentStats],
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error) {
+    console.error('MinIO-Statistiken API Error:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## Umgebungsvariablen
+
+### .env Konfiguration für MinIO
+```bash
+# .env
+# ========================================
+# MINIO KONFIGURATION
+# ========================================
+MINIO_ENABLED=true
+MINIO_ENDPOINT=minio
+MINIO_PORT=9000
+MINIO_USE_SSL=false
+MINIO_ACCESS_KEY=lxp_minio_user
+MINIO_SECRET_KEY=lxp_minio_password
+
+# MinIO Buckets
+MINIO_ARP_BUCKET=lxp-arp
+MINIO_CONTENT_BUCKET=lxp-content
+
+# MinIO URLs
+MINIO_PUBLIC_URL=http://localhost:9000
+MINIO_CONSOLE_URL=http://localhost:9001
+
+# MinIO Limits
+MINIO_MAX_FILE_SIZE=104857600  # 100MB
+MINIO_MAX_UPLOAD_CONCURRENCY=5
+MINIO_PRESIGNED_URL_EXPIRY=3600  # 1 Stunde
+
+# MinIO Security
+MINIO_ENCRYPTION_ENABLED=true
+MINIO_TLS_ENABLED=false
+MINIO_ACCESS_LOG_ENABLED=true
+
+# MinIO Monitoring
+MINIO_HEALTH_CHECK_INTERVAL=30
+MINIO_METRICS_ENABLED=true
+MINIO_AUDIT_LOGGING_ENABLED=true
+```
+
+## Sicherheitsrichtlinien
+
+### Bucket-Policies
+- **lxp-arp**: Privat, nur Course-Service hat Schreibrechte
+- **lxp-content**: Öffentlich lesbar, aber nur CMS-Service schreibt
+- **Verschlüsselung**: Alle Objekte werden verschlüsselt gespeichert
+- **Access Logs**: Vollständige Protokollierung aller Zugriffe
+
+### Zugriffskontrolle
+- **Admin-Only**: MinIO-Dashboard nur für Administratoren
+- **Service-Accounts**: Separate Zugriffsschlüssel für jeden Service
+- **Audit-Logging**: Alle MinIO-Operationen werden protokolliert
+
+## Monitoring und Wartung
+
+### Health Checks
+```typescript
+// lib/health/minio-health.ts
+import { minioService } from '@/lib/minio/client';
+
+export async function checkMinioHealth(): Promise<HealthStatus> {
+  try {
+    // Bucket-Existenz prüfen
+    const arpExists = await minioService.client.bucketExists('lxp-arp');
+    const contentExists = await minioService.client.bucketExists('lxp-content');
+
+    if (!arpExists || !contentExists) {
+      return {
+        status: 'unhealthy',
+        message: 'Erforderliche Buckets fehlen',
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    // Upload-Test
+    const testBuffer = Buffer.from('health-check');
+    const testKey = `health-check-${Date.now()}.txt`;
+    
+    await minioService.client.putObject('lxp-arp', testKey, testBuffer);
+    await minioService.client.removeObject('lxp-arp', testKey);
+
+    return {
+      status: 'healthy',
+      message: 'MinIO funktioniert korrekt',
+      timestamp: new Date().toISOString(),
+    };
+
+  } catch (error) {
+    return {
+      status: 'unhealthy',
+      message: `MinIO-Fehler: ${error.message}`,
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+interface HealthStatus {
+  status: 'healthy' | 'unhealthy';
+  message: string;
+  timestamp: string;
+}
+```
+
+## Nächste Schritte
+
+1. **MinIO in Docker Compose integrieren** mit Health Checks
+2. **Bucket-Policies konfigurieren** für Sicherheit
+3. **Service-Integration** mit Course-Service und CMS-Service
+4. **Admin-Dashboard** für MinIO-Verwaltung
+5. **Monitoring** und Health Checks implementieren
+6. **Backup-Strategie** für MinIO-Daten entwickeln
+description:
+globs:
+alwaysApply: true
+---

@@ -1,0 +1,62 @@
+# Deployment und DevOps
+
+## Deployment-Strategie
+- **Vercel**: Hauptplattform für Next.js-Deployment
+- **Staging-Umgebung**: Automatische Deployments für Pull Requests
+- **Production-Umgebung**: Manuelle Freigabe nach Tests
+- **Rollback-Strategie**: Schnelle Rückkehr zu vorherigen Versionen
+
+## CI/CD Pipeline
+- **GitHub Actions**: Automatisierte Build- und Test-Prozesse
+- **Branch-Strategie**: Main-Branch für Production, Feature-Branches für Entwicklung
+- **Pull Request Workflow**: Automatische Tests und Staging-Deployments
+- **Code Review**: Mindestens ein Reviewer vor Merge
+
+## Environment-Management
+```bash
+# .env.local (Development)
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your-secret-key
+DATABASE_URL=postgresql://user:password@localhost:5432/azubi_dev
+REDIS_URL=redis://localhost:6379
+
+# .env.production (Production)
+NEXTAUTH_URL=https://azubi-platform.vercel.app
+NEXTAUTH_SECRET=production-secret-key
+DATABASE_URL=postgresql://user:password@prod-db:5432/azubi_prod
+REDIS_URL=redis://prod-redis:6379
+```
+
+## Build-Optimierung
+- **Next.js Build**: Optimierte Production-Builds
+- **Bundle-Analyse**: Überwachung der Bundle-Größe
+- **Image-Optimierung**: Automatische Bildkomprimierung
+- **Code-Splitting**: Dynamische Imports für bessere Performance
+
+## Monitoring und Observability
+- **Vercel Analytics**: Performance-Monitoring
+- **Error Tracking**: Sentry für Fehlerüberwachung
+- **Uptime-Monitoring**: Status-Seite für Benutzer
+- **Performance-Metrics**: Core Web Vitals überwachen
+
+## Sicherheit
+- **Dependency Scanning**: Automatische Sicherheitsprüfungen
+- **Secrets Management**: Sichere Verwaltung von API-Keys
+- **HTTPS**: Automatische SSL-Zertifikate
+- **Security Headers**: CSP, HSTS, X-Frame-Options
+
+## Backup und Recovery
+- **Datenbank-Backups**: Tägliche automatische Backups
+- **File Storage**: Redundante Speicherung von Uploads
+- **Disaster Recovery**: Plan für Systemausfälle
+- **Data Retention**: DSGVO-konforme Datenaufbewahrung
+
+## Skalierung
+- **Auto-Scaling**: Vercel Edge Functions für hohe Last
+- **CDN**: Globale Content-Distribution
+- **Database Scaling**: Read-Replicas für bessere Performance
+- **Caching-Strategien**: Redis für Session- und Daten-Caching
+description:
+globs:
+alwaysApply: true
+---

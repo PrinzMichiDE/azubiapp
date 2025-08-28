@@ -1,0 +1,83 @@
+# Testing-Standards und Qualitätssicherung
+
+## Test-Strategie
+- **Test-Pyramide**: Unit-Tests (70%), Integration-Tests (20%), E2E-Tests (10%)
+- **Coverage-Ziel**: Mindestens 80% Code-Coverage
+- **Test-First-Ansatz**: TDD wo möglich für kritische Funktionen
+- **Regelmäßige Tests**: Automatische Tests bei jedem Commit
+
+## Unit-Tests
+- **Jest Framework**: Standard-Testing-Framework für Next.js
+- **React Testing Library**: Für Komponenten-Tests
+- **Mocking**: Externe Dependencies mocken
+- **Snapshots**: UI-Komponenten-Snapshots für Regression-Tests
+
+## Test-Struktur
+```typescript
+// Beispiel für einen Unit-Test
+/**
+ * Test für die LearningCard-Komponente
+ * Test for the LearningCard component
+ */
+describe('LearningCard', () => {
+  const mockProps: LearningCardProps = {
+    title: 'Test Module',
+    description: 'Test Description',
+    progress: 75,
+    difficulty: 'intermediate',
+    estimatedTime: 30,
+    tags: ['javascript', 'react']
+  };
+
+  it('rendert alle Props korrekt', () => {
+    // Renders all props correctly
+    render(<LearningCard {...mockProps} />);
+    
+    expect(screen.getByText('Test Module')).toBeInTheDocument();
+    expect(screen.getByText('Test Description')).toBeInTheDocument();
+    expect(screen.getByText('75%')).toBeInTheDocument();
+  });
+
+  it('zeigt den korrekten Schwierigkeitsgrad an', () => {
+    // Shows correct difficulty level
+    render(<LearningCard {...mockProps} />);
+    
+    const difficultyBadge = screen.getByText('intermediate');
+    expect(difficultyBadge).toHaveClass('bg-yellow-100');
+  });
+});
+```
+
+## Integration-Tests
+- **API-Routen**: Test der Next.js API-Endpunkte
+- **Datenbank-Operationen**: Test der Datenbank-Interaktionen
+- **Authentifizierung**: Test der Auth-Flows
+- **Middleware**: Test der Request/Response-Pipeline
+
+## E2E-Tests
+- **Cypress**: Für End-to-End-Tests
+- **Kritische Pfade**: Login, Dashboard, Lernmodul-Abschluss
+- **Cross-Browser**: Chrome, Firefox, Safari
+- **Mobile-Tests**: Responsive Design und Touch-Interaktionen
+
+## Test-Daten
+- **Factories**: Generierung von Test-Daten
+- **Fixtures**: Vordefinierte Test-Datensätze
+- **Cleanup**: Automatische Bereinigung nach Tests
+- **Isolation**: Jeder Test läuft unabhängig
+
+## Performance-Tests
+- **Lighthouse**: Performance, Accessibility, Best Practices
+- **Bundle-Analyse**: Webpack-Bundle-Größe überwachen
+- **Ladezeiten**: Kritische Pfade messen
+- **Memory-Leaks**: React-Komponenten auf Memory-Leaks testen
+
+## Automatisierung
+- **CI/CD Pipeline**: GitHub Actions für automatische Tests
+- **Pre-commit Hooks**: Tests vor jedem Commit
+- **Quality Gates**: Tests müssen bestehen für Deployment
+- **Reporting**: Automatische Test-Reports generieren
+description:
+globs:
+alwaysApply: true
+---

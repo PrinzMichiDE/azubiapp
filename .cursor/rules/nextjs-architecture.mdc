@@ -1,0 +1,56 @@
+# Next.js Architektur für LXP-Plattform
+
+## Projektstruktur
+```
+src/
+├── app/                    # App Router (Next.js 13+)
+│   ├── (auth)/            # Authentifizierung
+│   ├── (dashboard)/       # Dashboard-Bereiche
+│   ├── (learning)/        # Lernmodule
+│   ├── (admin)/           # Admin-Bereich
+│   └── api/               # API-Routen
+├── components/             # Wiederverwendbare Komponenten
+│   ├── ui/                # shadcn/ui Komponenten
+│   ├── forms/             # Formulare
+│   ├── charts/            # Diagramme und Visualisierungen
+│   └── learning/          # Lern-spezifische Komponenten
+├── lib/                    # Utilities und Konfiguration
+├── hooks/                  # Custom React Hooks
+├── types/                  # TypeScript Typen
+├── locales/                # i18n Übersetzungen
+└── styles/                 # Globale Styles
+```
+
+## App Router Konventionen
+- **Layout-Dateien**: Für gemeinsame UI-Elemente zwischen Routen
+- **Page-Dateien**: Für spezifische Seiten-Inhalte
+- **Loading-Dateien**: Für Suspense-Boundaries
+- **Error-Dateien**: Für Error-Handling
+- **Not-Found-Dateien**: Für 404-Seiten
+
+## API-Routen Struktur
+```
+app/api/
+├── auth/                   # Authentifizierung
+├── users/                  # Benutzer-Management
+├── learning/               # Lerninhalte
+├── analytics/              # Leistungsanalyse
+├── content/                # CMS-Funktionen
+└── hr/                     # HR-Integration
+```
+
+## Komponenten-Architektur
+- **Atomic Design**: Atoms → Molecules → Organisms → Templates → Pages
+- **Container/Presentational Pattern**: Trennung von Logik und Darstellung
+- **Compound Components**: Für komplexe UI-Strukturen
+- **Custom Hooks**: Für wiederverwendbare Logik
+
+## Performance-Optimierung
+- **Dynamic Imports**: Für Code-Splitting
+- **Image Optimization**: Next.js Image-Komponente
+- **Font Optimization**: Lokale Fonts mit next/font
+- **Bundle Analysis**: Regelmäßige Überprüfung der Bundle-Größe
+description:
+globs:
+alwaysApply: true
+---

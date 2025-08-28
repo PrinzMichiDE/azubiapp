@@ -1,0 +1,440 @@
+# Datenbank-Schema und Prisma-Integration
+
+## Datenbank-Überblick
+- **Primäre DB**: PostgreSQL für relationale Beziehungen
+- **ORM**: Prisma für TypeScript-Integration und Migrationen
+- **Caching**: Redis für temporäre Daten und Sessions
+- **Backup**: Automatische Backups via pg_dump oder Cloud-Services
+
+## Prisma Schema-Struktur
+```prisma
+// schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Benutzer-Management
+model User {
+  id            Int      @id @default(autoincrement())
+  email         String   @unique
+  firstName     String?
+  lastName      String?
+  role          Role     @default(AZUBI)
+  interests     String[] // Array für KI-Empfehlungen
+  progress      Json     // JSON für Lernfortschritt
+  points        Int      @default(0)
+  level         Int      @default(1)
+  streak        Int      @default(0) // Aktuelle Lern-Serie
+  longestStreak Int      @default(0) // Längste Serie
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Beziehungen
+  achievements  Achievement[]
+  completions  Completion[]
+  posts        Post[]
+  groupMembers GroupMember[]
+  feedback     Feedback[]
+  
+  @@map("users")
+}
+
+// Lernmodule
+model Module {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String?
+  content     Json     // JSON für Multimedia-Inhalte
+  difficulty  Difficulty
+  estimatedTime Int    // in Minuten
+  tags        String[]
+  prerequisites Int[]  // Array von Modul-IDs
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Beziehungen
+  completions Completion[]
+  learningPaths LearningPathModule[]
+  
+  @@map("modules")
+}
+
+// Lernpfade
+model LearningPath {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  category    String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  
+  // Beziehungen
+  modules     LearningPathModule[]
+  
+  @@map("learning_paths")
+}
+
+// Lernpfad-Modul Verknüpfung
+model LearningPathModule {
+  id            Int         @id @default(autoincrement())
+  learningPathId Int
+  moduleId      Int
+  order         Int
+  isRequired    Boolean     @default(true)
+  
+  // Beziehungen
+  learningPath  LearningPath @relation(fields: [learningPathId], references: [id])
+  module        Module       @relation(fields: [moduleId], references: [id])
+  
+  @@unique([learningPathId, moduleId])
+  @@map("learning_path_modules")
+}
+
+// Modul-Abschlüsse
+model Completion {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  moduleId  Int
+  score     Float?
+  timeSpent Int      // in Sekunden
+  attempts  Int      @default(1)
+  completed DateTime @default(now())
+  
+  // Beziehungen
+  user      User     @relation(fields: [userId], references: [id])
+  module    Module   @relation(fields: [moduleId], references: [id])
+  
+  @@unique([userId, moduleId])
+  @@map("completions")
+}
+
+// Community-Features
+model Post {
+  id        Int      @id @default(autoincrement())
+  content   String
+  userId    Int
+  threadId  Int?
+  parentId  Int?     // Für verschachtelte Antworten
+  votes     Int      @default(0)
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Beziehungen
+  user      User     @relation(fields: [userId], references: [id])
+  thread    Thread?  @relation(fields: [threadId], references: [id])
+  parent    Post?    @relation("PostReplies", fields: [parentId], references: [id])
+  replies   Post[]   @relation("PostReplies")
+  
+  @@map("posts")
+}
+
+model Thread {
+  id          Int      @id @default(autoincrement())
+  title       String
+  category    String
+  isLocked    Boolean  @default(false)
+  isPinned    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  // Beziehungen
+  posts       Post[]
+  
+  @@map("threads")
+}
+
+// Gruppen und Mitglieder
+model Group {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  isPrivate   Boolean  @default(false)
+  maxMembers  Int?
+  createdAt   DateTime @default(now())
+  
+  // Beziehungen
+  members     GroupMember[]
+  
+  @@map("groups")
+}
+
+model GroupMember {
+  userId    Int
+  groupId   Int
+  role      GroupRole @default(MEMBER)
+  joinedAt  DateTime  @default(now())
+  
+  // Beziehungen
+  user      User      @relation(fields: [userId], references: [id])
+  group     Group     @relation(fields: [groupId], references: [id])
+  
+  @@id([userId, groupId])
+  @@map("group_members")
+}
+
+// Achievements und Gamification
+model Achievement {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  icon        String
+  category    AchievementCategory
+  rarity      AchievementRarity
+  points      Int
+  requirements Json    // JSON für Anforderungen
+  userId      Int
+  unlockedAt  DateTime @default(now())
+  
+  // Beziehungen
+  user        User     @relation(fields: [userId], references: [id])
+  
+  @@map("achievements")
+}
+
+model Feedback {
+  id          Int      @id @default(autoincrement())
+  fromUserId  Int
+  toUserId    Int
+  content     String
+  rating      Int      // 1-5 Sterne
+  createdAt   DateTime @default(now())
+  
+  // Beziehungen
+  fromUser    User     @relation("FeedbackFrom", fields: [fromUserId], references: [id])
+  toUser      User     @relation("FeedbackTo", fields: [toUserId], references: [id])
+  
+  @@map("feedback")
+}
+
+// Enums
+enum Role {
+  AZUBI
+  AUSBILDER
+  ADMIN
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum GroupRole {
+  MEMBER
+  MODERATOR
+  ADMIN
+}
+
+enum AchievementCategory {
+  LEARNING
+  COMMUNITY
+  SPECIAL
+}
+
+enum AchievementRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+```
+
+## Prisma Client Integration
+```typescript
+// lib/prisma.ts
+import { PrismaClient } from '@prisma/client';
+
+declare global {
+  var __prisma: PrismaClient | undefined;
+}
+
+export const prisma = globalThis.__prisma || new PrismaClient({
+  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+});
+
+if (process.env.NODE_ENV !== 'production') {
+  globalThis.__prisma = prisma;
+}
+
+// Graceful Shutdown
+process.on('beforeExit', async () => {
+  await prisma.$disconnect();
+});
+```
+
+## Datenbank-Operationen
+```typescript
+// Beispiel für komplexe Queries
+export class LearningRepository {
+  constructor(private prisma: PrismaClient) {}
+  
+  // Lernfortschritt mit Statistiken
+  async getUserProgress(userId: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        completions: {
+          include: {
+            module: {
+              select: {
+                id: true,
+                title: true,
+                difficulty: true,
+                estimatedTime: true
+              }
+            }
+          }
+        },
+        achievements: {
+          select: {
+            id: true,
+            name: true,
+            icon: true,
+            points: true,
+            unlockedAt: true
+          }
+        }
+      }
+    });
+    
+    if (!user) return null;
+    
+    // Statistiken berechnen
+    const totalModules = await this.prisma.module.count({ where: { isActive: true } });
+    const completedModules = user.completions.length;
+    const totalPoints = user.points;
+    const averageScore = user.completions.length > 0 
+      ? user.completions.reduce((sum, c) => sum + (c.score || 0), 0) / user.completions.length
+      : 0;
+    
+    return {
+      user,
+      stats: {
+        totalModules,
+        completedModules,
+        completionRate: (completedModules / totalModules) * 100,
+        totalPoints,
+        averageScore,
+        currentStreak: user.streak,
+        longestStreak: user.longestStreak
+      }
+    };
+  }
+  
+  // KI-Empfehlungen basierend auf Benutzer-Verhalten
+  async getRecommendations(userId: number, limit: number = 5) {
+    // Benutzer-Interessen und -Historie analysieren
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { interests: true, completions: { include: { module: true } } }
+    });
+    
+    if (!user) return [];
+    
+    // Module finden, die der Benutzer noch nicht abgeschlossen hat
+    const completedModuleIds = user.completions.map(c => c.moduleId);
+    
+    // Empfehlungen basierend auf Interessen und Schwierigkeitsgrad
+    const recommendations = await this.prisma.module.findMany({
+      where: {
+        id: { notIn: completedModuleIds },
+        isActive: true,
+        difficulty: this.calculateRecommendedDifficulty(user.completions)
+      },
+      take: limit,
+      orderBy: [
+        { tags: { hasSome: user.interests } ? 'desc' : 'asc' },
+        { difficulty: 'asc' }
+      ]
+    });
+    
+    return recommendations;
+  }
+  
+  private calculateRecommendedDifficulty(completions: any[]): Difficulty {
+    if (completions.length === 0) return 'BEGINNER';
+    
+    const averageScore = completions.reduce((sum, c) => sum + (c.score || 0), 0) / completions.length;
+    
+    if (averageScore >= 80) return 'ADVANCED';
+    if (averageScore >= 60) return 'INTERMEDIATE';
+    return 'BEGINNER';
+  }
+}
+```
+
+## Migrationen und Seeding
+```typescript
+// prisma/migrations/001_initial/migration.sql
+-- Erstelle initiale Tabellen
+CREATE TABLE "users" (
+  "id" SERIAL PRIMARY KEY,
+  "email" TEXT NOT NULL UNIQUE,
+  "firstName" TEXT,
+  "lastName" TEXT,
+  "role" TEXT NOT NULL DEFAULT 'AZUBI',
+  "interests" TEXT[],
+  "progress" JSONB,
+  "points" INTEGER NOT NULL DEFAULT 0,
+  "level" INTEGER NOT NULL DEFAULT 1,
+  "streak" INTEGER NOT NULL DEFAULT 0,
+  "longestStreak" INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL
+);
+
+-- Indexe für Performance
+CREATE INDEX "users_email_idx" ON "users"("email");
+CREATE INDEX "users_role_idx" ON "users"("role");
+CREATE INDEX "users_points_idx" ON "users"("points");
+
+// prisma/seed.ts
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  // Beispiel-Daten für Entwicklung
+  const user = await prisma.user.create({
+    data: {
+      email: 'test@example.com',
+      firstName: 'Test',
+      lastName: 'User',
+      role: 'AZUBI',
+      interests: ['javascript', 'react', 'web-development']
+    }
+  });
+  
+  const module = await prisma.module.create({
+    data: {
+      title: 'JavaScript Grundlagen',
+      description: 'Lerne die Grundlagen von JavaScript',
+      content: { type: 'video', url: 'https://example.com/video.mp4' },
+      difficulty: 'BEGINNER',
+      estimatedTime: 30,
+      tags: ['javascript', 'programming', 'basics']
+    }
+  });
+  
+  console.log('Seed abgeschlossen');
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
+```
+description:
+globs:
+alwaysApply: true
+---

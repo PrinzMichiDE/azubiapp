@@ -1,0 +1,543 @@
+# Nginx-Konfiguration und Reverse Proxy
+
+## Nginx-Überblick
+- **Reverse Proxy**: Weiterleitung von Requests an Next.js-App
+- **SSL/TLS**: HTTPS-Unterstützung mit Let's Encrypt
+- **Load Balancing**: Verteilung der Last auf mehrere App-Instanzen
+- **Caching**: Statische Assets und API-Responses cachen
+- **Security**: Headers, Rate Limiting, DDoS-Schutz
+
+## Nginx-Hauptkonfiguration
+```nginx
+# docker/nginx/nginx.conf
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Logging
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    # Performance-Optimierungen
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    client_max_body_size 100M;
+
+    # Gzip-Kompression
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/json
+        application/javascript
+        application/xml+rss
+        application/atom+xml
+        image/svg+xml;
+
+    # Rate Limiting
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+    limit_req_zone $binary_remote_addr zone=login:10m rate=5r/m;
+
+    # Upstream für Load Balancing
+    upstream nextjs_app {
+        least_conn;
+        server app:3000 max_fails=3 fail_timeout=30s;
+        server app:3000 max_fails=3 fail_timeout=30s;
+        keepalive 32;
+    }
+
+    # HTTP zu HTTPS Redirect
+    server {
+        listen 80;
+        server_name azubi-lxp.com www.azubi-lxp.com;
+        
+        # Let's Encrypt Challenge
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+        
+        # Redirect zu HTTPS
+        location / {
+            return 301 https://$server_name$request_uri;
+        }
+    }
+
+    # HTTPS-Server
+    server {
+        listen 443 ssl http2;
+        server_name azubi-lxp.com www.azubi-lxp.com;
+
+        # SSL-Konfiguration
+        ssl_certificate /etc/nginx/ssl/live/azubi-lxp.com/fullchain.pem;
+        ssl_certificate_key /etc/nginx/ssl/live/azubi-lxp.com/privkey.pem;
+        ssl_session_timeout 1d;
+        ssl_session_cache shared:SSL:50m;
+        ssl_session_tickets off;
+
+        # Moderne SSL-Konfiguration
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+        ssl_prefer_server_ciphers off;
+
+        # HSTS
+        add_header Strict-Transport-Security "max-age=63072000" always;
+
+        # Security Headers
+        add_header X-Frame-Options DENY always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none';" always;
+
+        # Root-Verzeichnis
+        root /var/www/html;
+        index index.html;
+
+        # API-Routen mit Rate Limiting
+        location /api/ {
+            limit_req zone=api burst=20 nodelay;
+            
+            proxy_pass http://nextjs_app;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache_bypass $http_upgrade;
+            proxy_read_timeout 300s;
+            proxy_connect_timeout 75s;
+        }
+
+        # Auth-Routen mit strengerem Rate Limiting
+        location /api/auth/ {
+            limit_req zone=login burst=5 nodelay;
+            
+            proxy_pass http://nextjs_app;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache_bypass $http_upgrade;
+        }
+
+        # Statische Assets (Next.js)
+        location /_next/static/ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+            add_header Vary Accept-Encoding;
+            
+            proxy_pass http://nextjs_app;
+            proxy_set_header Host $host;
+        }
+
+        # Bilder und Medien
+        location ~* \.(jpg|jpeg|png|gif|ico|svg|webp|mp4|webm|ogg|mp3|wav)$ {
+            expires 1y;
+            add_header Cache-Control "public";
+            add_header Vary Accept-Encoding;
+            
+            proxy_pass http://nextjs_app;
+            proxy_set_header Host $host;
+        }
+
+        # CSS und JavaScript
+        location ~* \.(css|js)$ {
+            expires 1y;
+            add_header Cache-Control "public";
+            add_header Vary Accept-Encoding;
+            
+            proxy_pass http://nextjs_app;
+            proxy_set_header Host $host;
+        }
+
+        # Fonts
+        location ~* \.(woff|woff2|ttf|eot)$ {
+            expires 1y;
+            add_header Cache-Control "public";
+            add_header Access-Control-Allow-Origin "*";
+            
+            proxy_pass http://nextjs_app;
+            proxy_set_header Host $host;
+        }
+
+        # Health Check
+        location /health {
+            access_log off;
+            return 200 "healthy\n";
+            add_header Content-Type text/plain;
+        }
+
+        # Alle anderen Requests an Next.js weiterleiten
+        location / {
+            proxy_pass http://nextjs_app;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache_bypass $http_upgrade;
+            proxy_read_timeout 300s;
+            proxy_connect_timeout 75s;
+        }
+
+        # Error-Seiten
+        error_page 404 /404.html;
+        error_page 500 502 503 504 /50x.html;
+        
+        location = /50x.html {
+            root /usr/share/nginx/html;
+        }
+    }
+}
+```
+
+## Nginx für Staging
+```nginx
+# docker/nginx/nginx.staging.conf
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Logging
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    # Performance
+    sendfile on;
+    tcp_nopush on;
+    keepalive_timeout 65;
+
+    # Gzip
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css application/json application/javascript;
+
+    # Upstream
+    upstream staging_app {
+        server app:3000;
+    }
+
+    # HTTP-Server (Staging ohne HTTPS)
+    server {
+        listen 80;
+        server_name staging.azubi-lxp.com;
+
+        # Security Headers
+        add_header X-Frame-Options DENY always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header X-XSS-Protection "1; mode=block" always;
+
+        # API-Routen
+        location /api/ {
+            proxy_pass http://staging_app;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        # Statische Assets
+        location /_next/static/ {
+            expires 1h;
+            add_header Cache-Control "public";
+            proxy_pass http://staging_app;
+            proxy_set_header Host $host;
+        }
+
+        # Alle anderen Requests
+        location / {
+            proxy_pass http://staging_app;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+```
+
+## Nginx für Development
+```nginx
+# docker/nginx/nginx.dev.conf
+user nginx;
+worker_processes 1;
+error_log /var/log/nginx/error.log debug;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    # Development Logging
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log debug;
+
+    # Performance (Development)
+    sendfile off;
+    tcp_nopush off;
+    keepalive_timeout 65;
+
+    # Upstream
+    upstream dev_app {
+        server app:3000;
+    }
+
+    # HTTP-Server
+    server {
+        listen 80;
+        server_name localhost;
+
+        # Alle Requests an Next.js weiterleiten
+        location / {
+            proxy_pass http://dev_app;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # WebSocket-Support für Hot Reload
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+}
+```
+
+## SSL-Zertifikate mit Let's Encrypt
+```yaml
+# docker-compose.ssl.yml
+version: '3.8'
+
+services:
+  # Certbot für Let's Encrypt
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./docker/nginx/ssl:/etc/letsencrypt
+      - ./docker/nginx/www:/var/www/certbot
+    command: certonly --webroot --webroot-path=/var/www/certbot --email admin@azubi-lxp.com --agree-tos --no-eff-email -d azubi-lxp.com -d www.azubi-lxp.com
+    profiles:
+      - ssl
+
+  # Nginx mit SSL
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/ssl:/etc/nginx/ssl
+      - ./docker/nginx/www:/var/www/certbot
+      - ./docker/nginx/logs:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - azubi-network
+    restart: unless-stopped
+    profiles:
+      - ssl
+
+volumes:
+  nginx_ssl:
+    driver: local
+
+networks:
+  azubi-network:
+    external: true
+```
+
+## Nginx-Init-Script
+```bash
+# docker/nginx/init-ssl.sh
+#!/bin/bash
+
+# SSL-Zertifikate initialisieren
+set -e
+
+DOMAIN=${DOMAIN:-azubi-lxp.com}
+EMAIL=${EMAIL:-admin@azubi-lxp.com}
+
+echo "Initializing SSL certificates for domain: $DOMAIN"
+
+# Erstelle Verzeichnisse
+mkdir -p /etc/nginx/ssl
+mkdir -p /var/www/certbot
+
+# Erstelle temporäre Nginx-Konfiguration für ACME-Challenge
+cat > /etc/nginx/conf.d/acme-challenge.conf << EOF
+server {
+    listen 80;
+    server_name $DOMAIN www.$DOMAIN;
+    
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    
+    location / {
+        return 301 https://\$server_name\$request_uri;
+    }
+}
+EOF
+
+# Starte Nginx
+nginx -g "daemon off;" &
+
+# Warte auf Nginx
+sleep 5
+
+# Hole SSL-Zertifikate
+certbot certonly \
+    --webroot \
+    --webroot-path=/var/www/certbot \
+    --email $EMAIL \
+    --agree-tos \
+    --no-eff-email \
+    -d $DOMAIN \
+    -d www.$DOMAIN
+
+# Stoppe temporären Nginx
+nginx -s quit
+
+# Erstelle finale Nginx-Konfiguration
+cp /etc/nginx/nginx.conf.final /etc/nginx/nginx.conf
+
+echo "SSL certificates initialized successfully!"
+echo "You can now start Nginx with SSL support."
+```
+
+## Nginx-Monitoring
+```nginx
+# docker/nginx/nginx.monitoring.conf
+# Monitoring-Endpunkt für Prometheus
+location /nginx_status {
+    stub_status on;
+    access_log off;
+    allow 127.0.0.1;
+    allow 172.16.0.0/12;
+    deny all;
+}
+
+# Health Check mit detaillierten Informationen
+location /nginx_health {
+    access_log off;
+    
+    # Prüfe Nginx-Status
+    set $nginx_status "healthy";
+    set $upstream_status "healthy";
+    
+    # Prüfe Upstream-Verbindung
+    if ($upstream_status = "") {
+        set $upstream_status "unhealthy";
+        set $nginx_status "unhealthy";
+    }
+    
+    # Prüfe Upstream-Response
+    if ($upstream_status ~* "^[45]") {
+        set $nginx_status "unhealthy";
+    }
+    
+    # JSON-Response
+    add_header Content-Type application/json;
+    return 200 '{"status":"$nginx_status","upstream":"$upstream_status","timestamp":"$time_iso8601"}';
+}
+```
+
+## Nginx-Logging
+```nginx
+# Erweiterte Logging-Konfiguration
+log_format detailed '$remote_addr - $remote_user [$time_local] '
+                    '"$request" $status $body_bytes_sent '
+                    '"$http_referer" "$http_user_agent" '
+                    'rt=$request_time uct="$upstream_connect_time" '
+                    'uht="$upstream_header_time" urt="$upstream_response_time" '
+                    'upstream_status="$upstream_status"';
+
+# Separate Logs für verschiedene Bereiche
+access_log /var/log/nginx/access.log detailed;
+access_log /var/log/nginx/api.log detailed if=$api_request;
+access_log /var/log/nginx/static.log detailed if=$static_request;
+
+# API-Request-Bedingung
+map $request_uri $api_request {
+    ~^/api/ 1;
+    default 0;
+}
+
+# Static-Request-Bedingung
+map $request_uri $static_request {
+    ~* \.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ 1;
+    default 0;
+}
+```
+
+## Nginx-Security-Headers
+```nginx
+# Erweiterte Security-Headers
+add_header X-Frame-Options "SAMEORIGIN" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-XSS-Protection "1; mode=block" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none';" always;
+
+# CORS-Headers für API
+add_header Access-Control-Allow-Origin "*" always;
+add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+add_header Access-Control-Expose-Headers "Content-Length,Content-Range" always;
+```
+description:
+globs:
+alwaysApply: true
+---

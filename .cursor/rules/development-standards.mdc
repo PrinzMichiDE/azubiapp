@@ -1,0 +1,34 @@
+# Entwicklungsstandards für LXP-Projekt
+
+## Code-Qualität
+- **Sicherheit**: Immer DSGVO-konform, sichere Authentifizierung, Validierung aller Eingaben
+- **Wiederverwendbarkeit**: Modulare Komponenten, DRY-Prinzip, klare Trennung von Concerns
+- **Struktur**: Saubere Architektur, konsistente Namenskonventionen, klare Ordnerstruktur
+
+## Kommentierung und Dokumentation
+- **Deutsche Kommentare**: Für deutsche Entwickler und Stakeholder
+- **Englische Kommentare**: Für internationale Zusammenarbeit und automatische Dokumentation
+- **JSDoc/TSDoc**: Für alle Funktionen und Komponenten
+- **README-Dateien**: In Deutsch und Englisch für alle wichtigen Module
+
+## Internationalisierung (i18n)
+- **Sprachen**: Deutsch (Standard) und Englisch
+- **Übersetzungen**: Alle UI-Texte, Fehlermeldungen, Benachrichtigungen
+- **Formatierung**: Datum, Zahlen und Währungen nach lokalen Standards
+- **RTL-Support**: Für zukünftige Sprachen vorbereiten
+
+## Styling und UI/UX
+- **Konsistenz**: Globale Design-Systeme, einheitliche Farben, Typografie und Spacing
+- **Modern**: Aktuelle Design-Trends, Glassmorphism, Micro-Interaktionen
+- **Responsive**: Mobile-first Ansatz, Tablet- und Desktop-Optimierung
+- **Accessibility**: ARIA-Labels, Keyboard-Navigation, Screen-Reader-Support
+
+## Technische Standards
+- **TypeScript**: Strikte Typisierung, keine `any`-Typen
+- **ESLint/Prettier**: Konsistente Code-Formatierung
+- **Testing**: Unit-Tests für alle Funktionen, E2E-Tests für kritische Pfade
+- **Performance**: Lazy Loading, Code-Splitting, Optimierte Bundles
+description:
+globs:
+alwaysApply: true
+---

@@ -1,0 +1,1014 @@
+# API-Dokumentation und Entwickler-Experience
+
+## API-Dokumentationsübersicht
+- **OpenAPI/Swagger**: Automatische API-Dokumentation
+- **Swagger UI**: Interaktive API-Dokumentation unter /api/docs
+- **Redoc**: Alternative Dokumentationsansicht
+- **Entwickler-Portal**: API-Keys, Beispiele, SDKs
+- **Konfiguration**: Aktivierung über .env-Variablen
+
+## OpenAPI-Schema-Generierung
+```typescript
+// lib/swagger/openapi-generator.ts
+import { createSwaggerSpec } from 'next-swagger-doc';
+import { NextApiRequest, NextApiResponse } from 'next';
+
+// OpenAPI-Konfiguration
+const apiConfig = {
+  openapi: '3.0.0',
+  info: {
+    title: 'Azubi LXP API',
+    version: '1.0.0',
+    description: 'Learning Experience Platform API für Auszubildende und Unternehmen',
+    contact: {
+      name: 'API Support',
+      email: 'api-support@azubi-lxp.com',
+      url: 'https://azubi-lxp.com/support',
+    },
+    license: {
+      name: 'MIT',
+      url: 'https://opensource.org/licenses/MIT',
+    },
+  },
+  servers: [
+    {
+      url: process.env.NODE_ENV === 'production' 
+        ? 'https://azubi-lxp.com/api/v1' 
+        : 'http://localhost:3000/api/v1',
+      description: process.env.NODE_ENV === 'production' ? 'Produktionsserver' : 'Entwicklungsserver',
+    },
+  ],
+  tags: [
+    { name: 'Authentication', description: 'Authentifizierung und Autorisierung' },
+    { name: 'Users', description: 'Benutzerverwaltung' },
+    { name: 'Learning', description: 'Lerninhalte und -fortschritt' },
+    { name: 'Admin', description: 'Administrative Funktionen' },
+    { name: 'Analytics', description: 'Analysen und Berichte' },
+    { name: 'Integration', description: 'Externe Integrationen' },
+  ],
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'JWT-Token für Authentifizierung',
+      },
+      apiKey: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-API-Key',
+        description: 'API-Key für externe Integrationen',
+      },
+    },
+    schemas: {
+      Error: {
+        type: 'object',
+        properties: {
+          error: { type: 'string' },
+          message: { type: 'string' },
+          details: { type: 'object' },
+          timestamp: { type: 'string', format: 'date-time' },
+          requestId: { type: 'string' },
+        },
+        required: ['error', 'message', 'timestamp'],
+      },
+      User: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          email: { type: 'string', format: 'email' },
+          firstName: { type: 'string' },
+          lastName: { type: 'string' },
+          role: { type: 'string', enum: ['AZUBI', 'AUSBILDER', 'ADMIN'] },
+          companyId: { type: 'string', format: 'uuid' },
+          createdAt: { type: 'string', format: 'date-time' },
+          lastLogin: { type: 'string', format: 'date-time' },
+        },
+        required: ['id', 'email', 'firstName', 'lastName', 'role'],
+      },
+      LearningModule: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          content: { type: 'string' },
+          difficulty: { type: 'string', enum: ['beginner', 'intermediate', 'advanced'] },
+          estimatedDuration: { type: 'integer', description: 'Dauer in Minuten' },
+          tags: { type: 'array', items: { type: 'string' } },
+          isPublished: { type: 'boolean' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+        required: ['id', 'title', 'description', 'difficulty'],
+      },
+      UserProgress: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          userId: { type: 'string', format: 'uuid' },
+          moduleId: { type: 'string', format: 'uuid' },
+          progress: { type: 'number', minimum: 0, maximum: 100 },
+          completed: { type: 'boolean' },
+          startedAt: { type: 'string', format: 'date-time' },
+          completedAt: { type: 'string', format: 'date-time' },
+          timeSpent: { type: 'integer', description: 'Zeit in Sekunden' },
+        },
+        required: ['id', 'userId', 'moduleId', 'progress'],
+      },
+    },
+    responses: {
+      UnauthorizedError: {
+        description: 'Nicht autorisiert',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/Error' },
+            example: {
+              error: 'Unauthorized',
+              message: 'Zugriff verweigert',
+              timestamp: '2024-01-01T12:00:00Z',
+              requestId: 'req_1234567890',
+            },
+          },
+        },
+      },
+      ValidationError: {
+        description: 'Validierungsfehler',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/Error' },
+            example: {
+              error: 'Validation Error',
+              message: 'Ungültige Eingabedaten',
+              details: {
+                email: 'Ungültige E-Mail-Adresse',
+                password: 'Passwort zu schwach',
+              },
+              timestamp: '2024-01-01T12:00:00Z',
+              requestId: 'req_1234567890',
+            },
+          },
+        },
+      },
+    },
+  },
+  security: [
+    { bearerAuth: [] },
+    { apiKey: [] },
+  ],
+};
+
+// Swagger-Spec generieren
+export function generateSwaggerSpec() {
+  return createSwaggerSpec({
+    definition: apiConfig,
+    apiFolder: 'app/api',
+    customSiteTitle: 'Azubi LXP API Documentation',
+    customCss: '.swagger-ui .topbar { display: none }',
+    customJs: '/js/swagger-custom.js',
+  });
+}
+
+// API-Dokumentations-Endpoint
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    const spec = generateSwaggerSpec();
+    res.status(200).json(spec);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate API documentation' });
+  }
+}
+```
+
+## Swagger UI Integration
+```typescript
+// app/api/docs/page.tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
+
+// Dynamischer Import von Swagger UI
+const SwaggerUI = dynamic(() => import('swagger-ui-react'), { ssr: false });
+
+export default function APIDocsPage() {
+  const [spec, setSpec] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/swagger')
+      .then(res => res.json())
+      .then(data => {
+        setSpec(data);
+        setLoading(false);
+      })
+      .catch(error => {
+        console.error('Fehler beim Laden der API-Dokumentation:', error);
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!spec) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <h2 className="text-red-800 font-semibold">Fehler beim Laden der API-Dokumentation</h2>
+          <p className="text-red-600">Die API-Dokumentation konnte nicht geladen werden.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="api-docs-container">
+      <SwaggerUI
+        spec={spec}
+        docExpansion="list"
+        defaultModelsExpandDepth={2}
+        defaultModelExpandDepth={2}
+        displayOperationId={false}
+        displayRequestDuration={true}
+        filter={true}
+        showExtensions={true}
+        showCommonExtensions={true}
+        tryItOutEnabled={true}
+        requestInterceptor={(request: any) => {
+          // API-Key automatisch hinzufügen
+          const apiKey = localStorage.getItem('api_key');
+          if (apiKey) {
+            request.headers['X-API-Key'] = apiKey;
+          }
+          return request;
+        }}
+        responseInterceptor={(response: any) => {
+          // Response für bessere Lesbarkeit formatieren
+          return response;
+        }}
+      />
+      
+      <style jsx global>{`
+        .api-docs-container {
+          height: 100vh;
+          overflow: hidden;
+        }
+        
+        .swagger-ui .topbar {
+          display: none;
+        }
+        
+        .swagger-ui .info {
+          margin: 20px 0;
+        }
+        
+        .swagger-ui .scheme-container {
+          background: #f8f9fa;
+          padding: 20px;
+          margin: 20px 0;
+          border-radius: 8px;
+        }
+      `}</style>
+    </div>
+  );
+}
+```
+
+## API-Dokumentations-Middleware
+```typescript
+// lib/swagger/api-docs-middleware.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { generateSwaggerSpec } from './openapi-generator';
+
+export async function apiDocsMiddleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // Swagger UI
+  if (pathname === '/api/docs') {
+    return NextResponse.redirect(new URL('/api/docs/ui', request.url));
+  }
+
+  // OpenAPI JSON
+  if (pathname === '/api/docs/json') {
+    try {
+      const spec = generateSwaggerSpec();
+      return NextResponse.json(spec, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=3600',
+        },
+      });
+    } catch (error) {
+      return NextResponse.json(
+        { error: 'Failed to generate API documentation' },
+        { status: 500 }
+      }
+    );
+  }
+
+  // Swagger UI HTML
+  if (pathname === '/api/docs/ui') {
+    const html = generateSwaggerUI();
+    return new NextResponse(html, {
+      headers: {
+        'Content-Type': 'text/html',
+        'Cache-Control': 'public, max-age=3600',
+      },
+    });
+  }
+
+  return NextResponse.next();
+}
+
+function generateSwaggerUI(): string {
+  return `
+    <!DOCTYPE html>
+    <html lang="de">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Azubi LXP API Documentation</title>
+      <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css" />
+      <style>
+        .swagger-ui .topbar { display: none; }
+        .swagger-ui .info { margin: 20px 0; }
+        .swagger-ui .scheme-container { 
+          background: #f8f9fa; 
+          padding: 20px; 
+          margin: 20px 0; 
+          border-radius: 8px; 
+        }
+      </style>
+    </head>
+    <body>
+      <div id="swagger-ui"></div>
+      <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
+      <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js"></script>
+      <script>
+        window.onload = function() {
+          const ui = SwaggerUIBundle({
+            url: '/api/docs/json',
+            dom_id: '#swagger-ui',
+            deepLinking: true,
+            presets: [
+              SwaggerUIBundle.presets.apis,
+              SwaggerUIStandalonePreset
+            ],
+            plugins: [
+              SwaggerUIBundle.plugins.DownloadUrl
+            ],
+            layout: "StandaloneLayout",
+            docExpansion: "list",
+            defaultModelsExpandDepth: 2,
+            defaultModelExpandDepth: 2,
+            displayOperationId: false,
+            displayRequestDuration: true,
+            filter: true,
+            showExtensions: true,
+            showCommonExtensions: true,
+            tryItOutEnabled: true,
+            requestInterceptor: function(request) {
+              const apiKey = localStorage.getItem('api_key');
+              if (apiKey) {
+                request.headers['X-API-Key'] = apiKey;
+              }
+              return request;
+            },
+            responseInterceptor: function(response) {
+              return response;
+            }
+          });
+        };
+      </script>
+    </body>
+    </html>
+  `;
+}
+```
+
+## Entwickler-Portal
+```typescript
+// app/developer/page.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Icons } from '@/components/ui/icons';
+
+interface APIKey {
+  id: string;
+  name: string;
+  key: string;
+  permissions: string[];
+  createdAt: string;
+  lastUsed?: string;
+  isActive: boolean;
+}
+
+interface SDK {
+  name: string;
+  language: string;
+  version: string;
+  description: string;
+  downloadUrl: string;
+  documentationUrl: string;
+}
+
+export default function DeveloperPortalPage() {
+  const [apiKeys, setApiKeys] = useState<APIKey[]>([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [sdkList] = useState<SDK[]>([
+    {
+      name: 'Azubi LXP JavaScript SDK',
+      language: 'JavaScript/TypeScript',
+      version: '1.0.0',
+      description: 'Offizielles JavaScript SDK für Browser und Node.js',
+      downloadUrl: 'https://npmjs.com/package/@azubi-lxp/sdk',
+      documentationUrl: '/developer/sdk/javascript',
+    },
+    {
+      name: 'Azubi LXP Python SDK',
+      language: 'Python',
+      version: '1.0.0',
+      description: 'Offizielles Python SDK für Backend-Integrationen',
+      downloadUrl: 'https://pypi.org/project/azubi-lxp-sdk',
+      documentationUrl: '/developer/sdk/python',
+    },
+    {
+      name: 'Azubi LXP .NET SDK',
+      language: 'C#/.NET',
+      version: '1.0.0',
+      description: 'Offizielles .NET SDK für Windows-Anwendungen',
+      downloadUrl: 'https://nuget.org/packages/AzubiLXP.SDK',
+      documentationUrl: '/developer/sdk/dotnet',
+    },
+  ]);
+
+  const availablePermissions = [
+    'read:users',
+    'write:users',
+    'read:learning',
+    'write:learning',
+    'read:analytics',
+    'write:analytics',
+    'admin:system',
+  ];
+
+  useEffect(() => {
+    // API-Keys laden
+    loadAPIKeys();
+  }, []);
+
+  const loadAPIKeys = async () => {
+    try {
+      const response = await fetch('/api/developer/api-keys');
+      if (response.ok) {
+        const keys = await response.json();
+        setApiKeys(keys);
+      }
+    } catch (error) {
+      console.error('Fehler beim Laden der API-Keys:', error);
+    }
+  };
+
+  const createAPIKey = async () => {
+    if (!newKeyName.trim()) return;
+
+    try {
+      const response = await fetch('/api/developer/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newKeyName,
+          permissions: selectedPermissions,
+        }),
+      });
+
+      if (response.ok) {
+        const newKey = await response.json();
+        setApiKeys([...apiKeys, newKey]);
+        setNewKeyName('');
+        setSelectedPermissions([]);
+      }
+    } catch (error) {
+      console.error('Fehler beim Erstellen des API-Keys:', error);
+    }
+  };
+
+  const revokeAPIKey = async (keyId: string) => {
+    try {
+      const response = await fetch(`/api/developer/api-keys/${keyId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setApiKeys(apiKeys.filter(key => key.id !== keyId));
+      }
+    } catch (error) {
+      console.error('Fehler beim Widerrufen des API-Keys:', error);
+    }
+  };
+
+  const togglePermission = (permission: string) => {
+    setSelectedPermissions(prev =>
+      prev.includes(permission)
+        ? prev.filter(p => p !== permission)
+        : [...prev, permission]
+    );
+  };
+
+  return (
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="text-center space-y-4">
+        <h1 className="text-4xl font-bold">Entwickler-Portal</h1>
+        <p className="text-xl text-muted-foreground">
+          Integrieren Sie Azubi LXP in Ihre Anwendungen
+        </p>
+      </div>
+
+      <Tabs defaultValue="overview" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="overview">Übersicht</TabsTrigger>
+          <TabsTrigger value="api-keys">API-Keys</TabsTrigger>
+          <TabsTrigger value="sdks">SDKs</TabsTrigger>
+          <TabsTrigger value="examples">Beispiele</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Icons.api className="h-5 w-5" />
+                  <span>API-Endpoints</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">150+</p>
+                <p className="text-muted-foreground">Verfügbare Endpoints</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Icons.code className="h-5 w-5" />
+                  <span>SDKs</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">3</p>
+                <p className="text-muted-foreground">Unterstützte Sprachen</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Icons.book className="h-5 w-5" />
+                  <span>Dokumentation</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold">100%</p>
+                <p className="text-muted-foreground">API-Abdeckung</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Schnellstart</CardTitle>
+              <CardDescription>
+                Erste Schritte für die Integration von Azubi LXP
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <h4 className="font-semibold">1. API-Key erstellen</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Erstellen Sie einen API-Key mit den benötigten Berechtigungen
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="font-semibold">2. SDK installieren</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Wählen Sie das passende SDK für Ihre Programmiersprache
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="font-semibold">3. Erste API-Calls</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Testen Sie die API mit unseren Beispielen
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="api-keys" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Neuen API-Key erstellen</CardTitle>
+              <CardDescription>
+                Erstellen Sie einen neuen API-Key für Ihre Integration
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="key-name">Name des API-Keys</Label>
+                <Input
+                  id="key-name"
+                  value={newKeyName}
+                  onChange={(e) => setNewKeyName(e.target.value)}
+                  placeholder="z.B. HR-System Integration"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Berechtigungen</Label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {availablePermissions.map(permission => (
+                    <Button
+                      key={permission}
+                      variant={selectedPermissions.includes(permission) ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => togglePermission(permission)}
+                      className="justify-start"
+                    >
+                      {permission}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <Button onClick={createAPIKey} disabled={!newKeyName.trim()}>
+                API-Key erstellen
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Ihre API-Keys</CardTitle>
+              <CardDescription>
+                Verwalten Sie Ihre bestehenden API-Keys
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {apiKeys.map(key => (
+                  <div key={key.id} className="flex items-center justify-between p-4 border rounded-lg">
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <h4 className="font-semibold">{key.name}</h4>
+                        <Badge variant={key.isActive ? "default" : "secondary"}>
+                          {key.isActive ? "Aktiv" : "Inaktiv"}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground font-mono">
+                        {key.key.substring(0, 8)}...
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {key.permissions.map(permission => (
+                          <Badge key={permission} variant="outline" className="text-xs">
+                            {permission}
+                          </Badge>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Erstellt: {new Date(key.createdAt).toLocaleDateString('de-DE')}
+                      </p>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => revokeAPIKey(key.id)}
+                    >
+                      Widerrufen
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="sdks" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {sdkList.map(sdk => (
+              <Card key={sdk.name}>
+                <CardHeader>
+                  <CardTitle className="flex items-center space-x-2">
+                    <Icons.code className="h-5 w-5" />
+                    <span>{sdk.name}</span>
+                  </CardTitle>
+                  <CardDescription>{sdk.description}</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Sprache:</span>
+                      <span className="font-medium">{sdk.language}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Version:</span>
+                      <span className="font-medium">{sdk.version}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex space-x-2">
+                    <Button asChild className="flex-1">
+                      <a href={sdk.downloadUrl} target="_blank" rel="noopener noreferrer">
+                        Herunterladen
+                      </a>
+                    </Button>
+                    <Button variant="outline" asChild>
+                      <a href={sdk.documentationUrl} target="_blank" rel="noopener noreferrer">
+                        Dokumentation
+                      </a>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="examples" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Code-Beispiele</CardTitle>
+              <CardDescription>
+                Praktische Beispiele für häufige Anwendungsfälle
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <h4 className="font-semibold">Benutzer abrufen</h4>
+                <pre className="bg-muted p-4 rounded-lg overflow-x-auto">
+                  <code>{`// JavaScript
+const response = await fetch('/api/v1/users/me', {
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY',
+    'Content-Type': 'application/json'
+  }
+});
+const user = await response.json();`}</code>
+                </pre>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="font-semibold">Lernfortschritt aktualisieren</h4>
+                <pre className="bg-muted p-4 rounded-lg overflow-x-auto">
+                  <code>{`// Python
+import requests
+
+response = requests.post(
+    'https://azubi-lxp.com/api/v1/progress',
+    headers={'X-API-Key': 'YOUR_API_KEY'},
+    json={
+        'moduleId': 'uuid',
+        'progress': 75,
+        'completed': False
+    }
+)`}</code>
+                </pre>
+              </div>
+
+              <div className="space-y-4">
+                <h4 className="font-semibold">Analysen abrufen</h4>
+                <pre className="bg-muted p-4 rounded-lg overflow-x-auto">
+                  <code>{`// C#
+using var client = new HttpClient();
+client.DefaultRequestHeaders.Add("X-API-Key", "YOUR_API_KEY");
+
+var response = await client.GetAsync(
+    "https://azubi-lxp.com/api/v1/analytics/company/overview"
+);
+var analytics = await response.Content.ReadAsStringAsync();`}</code>
+                </pre>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+```
+
+## API-Key-Verwaltung
+```typescript
+// app/api/developer/api-keys/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth/auth-options';
+import { prisma } from '@/lib/prisma';
+import { generateAPIKey } from '@/lib/security/api-key-generator';
+import { auditLogger } from '@/lib/security/audit-logger';
+
+// API-Keys abrufen
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const apiKeys = await prisma.apiKey.findMany({
+      where: { userId: session.user.id },
+      select: {
+        id: true,
+        name: true,
+        key: true,
+        permissions: true,
+        createdAt: true,
+        lastUsed: true,
+        isActive: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return NextResponse.json(apiKeys);
+  } catch (error) {
+    console.error('Fehler beim Abrufen der API-Keys:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+
+// Neuen API-Key erstellen
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { name, permissions } = await request.json();
+
+    if (!name || !Array.isArray(permissions)) {
+      return NextResponse.json(
+        { error: 'Invalid input' },
+        { status: 400 }
+      );
+    }
+
+    const apiKey = generateAPIKey();
+    const hashedKey = await hashAPIKey(apiKey);
+
+    const newKey = await prisma.apiKey.create({
+      data: {
+        name,
+        key: hashedKey,
+        permissions,
+        userId: session.user.id,
+        isActive: true,
+      },
+    });
+
+    // Audit-Log
+    await auditLogger.log('api_key_created', {
+      userId: session.user.id,
+      keyId: newKey.id,
+      keyName: name,
+      permissions,
+    });
+
+    // Nur den ursprünglichen Key zurückgeben (einmalig)
+    return NextResponse.json({
+      id: newKey.id,
+      name: newKey.name,
+      key: apiKey, // Nur beim Erstellen sichtbar
+      permissions: newKey.permissions,
+      createdAt: newKey.createdAt,
+      isActive: newKey.isActive,
+    });
+
+  } catch (error) {
+    console.error('Fehler beim Erstellen des API-Keys:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+
+// API-Key löschen
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await getSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const keyId = searchParams.get('id');
+
+    if (!keyId) {
+      return NextResponse.json(
+        { error: 'Key ID required' },
+        { status: 400 }
+      );
+    }
+
+    const apiKey = await prisma.apiKey.findFirst({
+      where: { id: keyId, userId: session.user.id },
+    });
+
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: 'API key not found' },
+        { status: 404 }
+      );
+    }
+
+    await prisma.apiKey.update({
+      where: { id: keyId },
+      data: { isActive: false },
+    });
+
+    // Audit-Log
+    await auditLogger.log('api_key_revoked', {
+      userId: session.user.id,
+      keyId,
+      keyName: apiKey.name,
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Fehler beim Löschen des API-Keys:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## Umgebungsvariablen für API-Dokumentation
+```bash
+# .env
+# ========================================
+# API-DOKUMENTATION UND ENTWICKLER-EXPERIENCE
+# ========================================
+API_DOCS_ENABLED=true
+API_DOCS_PATH=/api/docs
+API_DOCS_UI_PATH=/api/docs/ui
+API_DOCS_JSON_PATH=/api/docs/json
+
+# Swagger UI Konfiguration
+SWAGGER_UI_ENABLED=true
+SWAGGER_UI_THEME=default
+SWAGGER_UI_DOC_EXPANSION=list
+SWAGGER_UI_DISPLAY_OPERATION_ID=false
+SWAGGER_UI_DISPLAY_REQUEST_DURATION=true
+SWAGGER_UI_FILTER=true
+SWAGGER_UI_TRY_IT_OUT_ENABLED=true
+
+# Entwickler-Portal
+DEVELOPER_PORTAL_ENABLED=true
+DEVELOPER_PORTAL_PATH=/developer
+API_KEYS_ENABLED=true
+SDKS_ENABLED=true
+EXAMPLES_ENABLED=true
+
+# API-Dokumentation Features
+API_DOCS_CACHE_ENABLED=true
+API_DOCS_CACHE_DURATION=3600
+API_DOCS_RATE_LIMIT_ENABLED=true
+API_DOCS_RATE_LIMIT_MAX=100
+API_DOCS_RATE_LIMIT_WINDOW=900000
+
+# Externe Integrationen
+EXTERNAL_INTEGRATIONS_ENABLED=true
+HR_INTEGRATION_ENABLED=true
+LMS_INTEGRATION_ENABLED=true
+SSO_INTEGRATION_ENABLED=true
+```
+description:
+globs:
+alwaysApply: true
+---

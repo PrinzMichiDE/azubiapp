@@ -1,0 +1,34 @@
+# Git Workflow Regel
+
+## Automatisches Git-Commit und Push
+
+Bei jeder Code-Änderung oder neuen Funktionalität soll automatisch ein Git-Commit und Push durchgeführt werden, wenn es sinnvoll ist.
+
+### Wann ist es sinnvoll:
+- Neue Features oder Funktionalitäten hinzugefügt
+- Bugfixes implementiert
+- Code-Refactoring abgeschlossen
+- Neue Dateien erstellt
+- Konfigurationsänderungen vorgenommen
+- Dependencies aktualisiert
+
+### Commit-Nachrichten Format:
+- Verwende deutsche Commit-Nachrichten für bessere Verständlichkeit
+- Format: `feat: Neue Funktionalität hinzugefügt` oder `fix: Bug behoben`
+- Sei präzise und beschreibend
+
+### Workflow:
+1. Alle Änderungen committen: `git add . && git commit -m "feat: Beschreibung der Änderung"`
+2. Änderungen pushen: `git push`
+3. Bei Fehlern: Fehler analysieren und beheben, dann erneut versuchen
+
+### Ausnahmen:
+- Keine Commits bei temporären Änderungen oder Tests
+- Keine Commits bei unvollständigen Features
+- Keine Commits bei fehlerhaftem Code
+
+Diese Regel stellt sicher, dass alle Code-Änderungen ordnungsgemäß versioniert und im Repository gespeichert werden.
+description:
+globs:
+alwaysApply: true
+---

@@ -1,0 +1,1035 @@
+# Internationalisierung (i18n) und Lokalisierung
+
+## i18n-Überblick
+- **Mehrsprachigkeit**: Deutsch (Standard) und Englisch
+- **Automatische Spracherkennung**: Browser-Einstellungen und User-Profil
+- **Fallback-Strategie**: Deutsch als Standardsprache
+- **Admin-Integration**: CMS-Übersetzungen im Admin Center
+- **Flexibilität**: Aktivierung/Deaktivierung über .env
+
+## Next.js i18n-Konfiguration
+```typescript
+// next.config.js
+const withNextIntl = require('next-intl/plugin')();
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // i18n-Konfiguration
+  i18n: {
+    locales: ['de', 'en'],
+    defaultLocale: 'de',
+    localeDetection: true,
+    domains: [
+      {
+        domain: 'azubi-lxp.com',
+        defaultLocale: 'de',
+      },
+      {
+        domain: 'azubi-lxp.com',
+        defaultLocale: 'en',
+      },
+    ],
+  },
+
+  // Experimentelle Features für bessere i18n-Unterstützung
+  experimental: {
+    typedRoutes: true,
+  },
+
+  // Bilder-Optimierung für verschiedene Sprachen
+  images: {
+    domains: ['azubi-lxp.com'],
+    formats: ['image/webp', 'image/avif'],
+  },
+
+  // Webpack-Konfiguration für i18n
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+      };
+    }
+    return config;
+  },
+};
+
+module.exports = withNextIntl(nextConfig);
+```
+
+## i18n-Middleware
+```typescript
+// middleware.ts
+import createMiddleware from 'next-intl/middleware';
+import { pathnames, locales, defaultLocale } from './config/i18n';
+
+export default createMiddleware({
+  // Unterstützte Sprachen
+  locales,
+  
+  // Standardsprache
+  defaultLocale,
+  
+  // Lokalisierte Pfade
+  pathnames,
+  
+  // Spracherkennung
+  localeDetection: true,
+  
+  // Fallback-Strategie
+  localePrefix: 'as-needed',
+  
+  // Alternative Sprachen
+  alternateLinks: true,
+});
+
+export const config = {
+  // Matcher für alle Routen außer API, _next, etc.
+  matcher: [
+    // Alle Pfade außer:
+    // - API-Routen
+    // - Next.js interne Routen
+    // - Statische Dateien
+    '/((?!api|_next|_vercel|.*\\..*).*)',
+  ],
+};
+```
+
+## i18n-Konfiguration
+```typescript
+// config/i18n.ts
+export const locales = ['de', 'en'] as const;
+export const defaultLocale = 'de' as const;
+
+export type Locale = typeof locales[number];
+
+// Lokalisierte Pfade
+export const pathnames = {
+  '/': '/',
+  '/dashboard': {
+    de: '/dashboard',
+    en: '/dashboard',
+  },
+  '/learn': {
+    de: '/lernen',
+    en: '/learn',
+  },
+  '/admin': {
+    de: '/verwaltung',
+    en: '/admin',
+  },
+  '/profile': {
+    de: '/profil',
+    en: '/profile',
+  },
+  '/auth/login': {
+    de: '/anmeldung',
+    en: '/login',
+  },
+  '/auth/register': {
+    de: '/registrierung',
+    en: '/register',
+  },
+} as const;
+
+// Sprachspezifische Einstellungen
+export const localeConfig = {
+  de: {
+    name: 'Deutsch',
+    flag: '🇩🇪',
+    direction: 'ltr',
+    dateFormat: 'dd.MM.yyyy',
+    timeFormat: 'HH:mm',
+    numberFormat: {
+      decimal: ',',
+      thousands: '.',
+      currency: 'EUR',
+    },
+  },
+  en: {
+    name: 'English',
+    flag: '🇬🇧',
+    direction: 'ltr',
+    dateFormat: 'MM/dd/yyyy',
+    timeFormat: 'hh:mm a',
+    numberFormat: {
+      decimal: '.',
+      thousands: ',',
+      currency: 'USD',
+    },
+  },
+} as const;
+
+// Fallback-Sprachen
+export const fallbackLocales: Record<Locale, Locale[]> = {
+  de: ['en'],
+  en: ['de'],
+};
+
+// Unterstützte Sprachen für Benutzer
+export const supportedLocales = locales;
+
+// Standardsprache für neue Benutzer
+export const getDefaultUserLocale = (): Locale => {
+  return defaultLocale;
+};
+
+// Sprache aus Browser-Einstellungen ermitteln
+export const getBrowserLocale = (): Locale => {
+  if (typeof window === 'undefined') return defaultLocale;
+  
+  const browserLocale = navigator.language.split('-')[0];
+  return locales.includes(browserLocale as Locale) 
+    ? (browserLocale as Locale) 
+    : defaultLocale;
+};
+
+// Sprache aus User-Agent ermitteln
+export const getUserAgentLocale = (userAgent: string): Locale => {
+  const acceptLanguage = userAgent.match(/Accept-Language: ([^,]+)/)?.[1];
+  if (acceptLanguage) {
+    const primaryLang = acceptLanguage.split(',')[0].split('-')[0];
+    return locales.includes(primaryLang as Locale) 
+      ? (primaryLang as Locale) 
+      : defaultLocale;
+  }
+  return defaultLocale;
+};
+```
+
+## Übersetzungsdateien
+```json
+// locales/de.json
+{
+  "common": {
+    "loading": "Lädt...",
+    "error": "Fehler",
+    "success": "Erfolgreich",
+    "cancel": "Abbrechen",
+    "save": "Speichern",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "create": "Erstellen",
+    "search": "Suchen",
+    "filter": "Filter",
+    "sort": "Sortieren",
+    "refresh": "Aktualisieren",
+    "back": "Zurück",
+    "next": "Weiter",
+    "previous": "Zurück",
+    "submit": "Absenden",
+    "close": "Schließen",
+    "open": "Öffnen",
+    "yes": "Ja",
+    "no": "Nein",
+    "confirm": "Bestätigen",
+    "warning": "Warnung",
+    "info": "Information",
+    "help": "Hilfe",
+    "settings": "Einstellungen",
+    "profile": "Profil",
+    "logout": "Abmelden",
+    "login": "Anmelden",
+    "register": "Registrieren"
+  },
+  "navigation": {
+    "dashboard": "Dashboard",
+    "learn": "Lernen",
+    "community": "Community",
+    "admin": "Verwaltung",
+    "profile": "Profil",
+    "settings": "Einstellungen",
+    "help": "Hilfe",
+    "about": "Über uns",
+    "contact": "Kontakt",
+    "privacy": "Datenschutz",
+    "terms": "AGB",
+    "imprint": "Impressum"
+  },
+  "auth": {
+    "login": {
+      "title": "Anmeldung",
+      "subtitle": "Melden Sie sich in Ihrem Azubi LXP Konto an",
+      "email": "E-Mail-Adresse",
+      "password": "Passwort",
+      "forgotPassword": "Passwort vergessen?",
+      "submit": "Anmelden",
+      "loading": "Anmeldung läuft...",
+      "noAccount": "Noch kein Konto?",
+      "register": "Jetzt registrieren",
+      "or": "Oder anmelden mit",
+      "microsoft": "Mit Microsoft anmelden",
+      "errors": {
+        "invalidCredentials": "E-Mail oder Passwort ist falsch",
+        "emailNotVerified": "Bitte bestätigen Sie Ihre E-Mail-Adresse",
+        "accountDisabled": "Ihr Konto wurde deaktiviert",
+        "unknownError": "Ein unerwarteter Fehler ist aufgetreten"
+      }
+    },
+    "register": {
+      "title": "Konto erstellen",
+      "subtitle": "Werden Sie Teil der Azubi LXP Community",
+      "firstName": "Vorname",
+      "lastName": "Nachname",
+      "email": "E-Mail-Adresse",
+      "password": "Passwort",
+      "passwordConfirm": "Passwort bestätigen",
+      "companyCode": "Unternehmenscode (optional)",
+      "companyCodeHelp": "Falls Ihr Unternehmen einen Registrierungscode bereitstellt",
+      "acceptTerms": "Ich akzeptiere die Allgemeinen Geschäftsbedingungen",
+      "acceptPrivacy": "Ich akzeptiere die Datenschutzerklärung",
+      "submit": "Konto erstellen",
+      "loading": "Registrierung läuft...",
+      "alreadyAccount": "Bereits ein Konto?",
+      "login": "Jetzt anmelden",
+      "passwordRequirements": {
+        "title": "Das Passwort muss enthalten:",
+        "minLength": "Mindestens 8 Zeichen",
+        "lowercase": "Mindestens einen Kleinbuchstaben",
+        "uppercase": "Mindestens einen Großbuchstaben",
+        "number": "Mindestens eine Zahl"
+      },
+      "errors": {
+        "emailExists": "Diese E-Mail-Adresse ist bereits registriert",
+        "passwordMismatch": "Passwörter stimmen nicht überein",
+        "weakPassword": "Passwort ist zu schwach",
+        "invalidEmail": "Ungültige E-Mail-Adresse"
+      }
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Willkommen zurück, {name}!",
+    "progress": "Ihr Fortschritt",
+    "recentModules": "Kürzlich bearbeitete Module",
+    "recommendations": "Empfohlene Module",
+    "achievements": "Ihre Erfolge",
+    "stats": {
+      "completedModules": "Abgeschlossene Module",
+      "totalPoints": "Gesamtpunkte",
+      "currentStreak": "Aktuelle Serie",
+      "rank": "Rang"
+    }
+  },
+  "learning": {
+    "title": "Lernen",
+    "modules": "Module",
+    "paths": "Lernpfade",
+    "progress": "Fortschritt",
+    "difficulty": {
+      "beginner": "Anfänger",
+      "intermediate": "Fortgeschritten",
+      "advanced": "Experte"
+    },
+    "status": {
+      "notStarted": "Nicht begonnen",
+      "inProgress": "In Bearbeitung",
+      "completed": "Abgeschlossen",
+      "locked": "Gesperrt"
+    },
+    "actions": {
+      "start": "Starten",
+      "continue": "Fortsetzen",
+      "review": "Wiederholen",
+      "takeQuiz": "Quiz starten"
+    }
+  },
+  "admin": {
+    "title": "Verwaltung",
+    "dashboard": "Admin Dashboard",
+    "users": "Benutzer",
+    "modules": "Module",
+    "analytics": "Analysen",
+    "settings": "Einstellungen",
+    "translations": "Übersetzungen",
+    "actions": {
+      "create": "Erstellen",
+      "edit": "Bearbeiten",
+      "delete": "Löschen",
+      "activate": "Aktivieren",
+      "deactivate": "Deaktivieren",
+      "export": "Exportieren",
+      "import": "Importieren"
+    }
+  },
+  "errors": {
+    "404": {
+      "title": "Seite nicht gefunden",
+      "message": "Die angeforderte Seite existiert nicht.",
+      "backHome": "Zurück zur Startseite"
+    },
+    "500": {
+      "title": "Server-Fehler",
+      "message": "Ein unerwarteter Fehler ist aufgetreten.",
+      "tryAgain": "Erneut versuchen"
+    },
+    "unauthorized": {
+      "title": "Zugriff verweigert",
+      "message": "Sie haben keine Berechtigung, diese Seite aufzurufen.",
+      "login": "Anmelden"
+    }
+  },
+  "validation": {
+    "required": "Dieses Feld ist erforderlich",
+    "email": "Bitte geben Sie eine gültige E-Mail-Adresse ein",
+    "minLength": "Mindestens {min} Zeichen erforderlich",
+    "maxLength": "Maximal {max} Zeichen erlaubt",
+    "passwordMatch": "Passwörter stimmen nicht überein",
+    "invalidFormat": "Ungültiges Format"
+  },
+  "notifications": {
+    "success": "Erfolgreich",
+    "error": "Fehler",
+    "warning": "Warnung",
+    "info": "Information",
+    "saved": "Änderungen gespeichert",
+    "deleted": "Element gelöscht",
+    "created": "Element erstellt",
+    "updated": "Element aktualisiert"
+  }
+}
+```
+
+```json
+// locales/en.json
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "filter": "Filter",
+    "sort": "Sort",
+    "refresh": "Refresh",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "submit": "Submit",
+    "close": "Close",
+    "open": "Open",
+    "yes": "Yes",
+    "no": "No",
+    "confirm": "Confirm",
+    "warning": "Warning",
+    "info": "Information",
+    "help": "Help",
+    "settings": "Settings",
+    "profile": "Profile",
+    "logout": "Logout",
+    "login": "Login",
+    "register": "Register"
+  },
+  "navigation": {
+    "dashboard": "Dashboard",
+    "learn": "Learn",
+    "community": "Community",
+    "admin": "Admin",
+    "profile": "Profile",
+    "settings": "Settings",
+    "help": "Help",
+    "about": "About",
+    "contact": "Contact",
+    "privacy": "Privacy",
+    "terms": "Terms",
+    "imprint": "Imprint"
+  },
+  "auth": {
+    "login": {
+      "title": "Login",
+      "subtitle": "Sign in to your Azubi LXP account",
+      "email": "Email address",
+      "password": "Password",
+      "forgotPassword": "Forgot password?",
+      "submit": "Sign in",
+      "loading": "Signing in...",
+      "noAccount": "Don't have an account?",
+      "register": "Register now",
+      "or": "Or sign in with",
+      "microsoft": "Sign in with Microsoft",
+      "errors": {
+        "invalidCredentials": "Email or password is incorrect",
+        "emailNotVerified": "Please verify your email address",
+        "accountDisabled": "Your account has been disabled",
+        "unknownError": "An unexpected error occurred"
+      }
+    },
+    "register": {
+      "title": "Create Account",
+      "subtitle": "Join the Azubi LXP Community",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email address",
+      "password": "Password",
+      "passwordConfirm": "Confirm password",
+      "companyCode": "Company code (optional)",
+      "companyCodeHelp": "If your company provides a registration code",
+      "acceptTerms": "I accept the Terms and Conditions",
+      "acceptPrivacy": "I accept the Privacy Policy",
+      "submit": "Create account",
+      "loading": "Creating account...",
+      "alreadyAccount": "Already have an account?",
+      "login": "Sign in now",
+      "passwordRequirements": {
+        "title": "Password must contain:",
+        "minLength": "At least 8 characters",
+        "lowercase": "At least one lowercase letter",
+        "uppercase": "At least one uppercase letter",
+        "number": "At least one number"
+      },
+      "errors": {
+        "emailExists": "This email address is already registered",
+        "passwordMismatch": "Passwords do not match",
+        "weakPassword": "Password is too weak",
+        "invalidEmail": "Invalid email address"
+      }
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome back, {name}!",
+    "progress": "Your progress",
+    "recentModules": "Recently worked on modules",
+    "recommendations": "Recommended modules",
+    "achievements": "Your achievements",
+    "stats": {
+      "completedModules": "Completed modules",
+      "totalPoints": "Total points",
+      "currentStreak": "Current streak",
+      "rank": "Rank"
+    }
+  },
+  "learning": {
+    "title": "Learning",
+    "modules": "Modules",
+    "paths": "Learning paths",
+    "progress": "Progress",
+    "difficulty": {
+      "beginner": "Beginner",
+      "intermediate": "Intermediate",
+      "advanced": "Advanced"
+    },
+    "status": {
+      "notStarted": "Not started",
+      "inProgress": "In progress",
+      "completed": "Completed",
+      "locked": "Locked"
+    },
+    "actions": {
+      "start": "Start",
+      "continue": "Continue",
+      "review": "Review",
+      "takeQuiz": "Take quiz"
+    }
+  },
+  "admin": {
+    "title": "Administration",
+    "dashboard": "Admin Dashboard",
+    "users": "Users",
+    "modules": "Modules",
+    "analytics": "Analytics",
+    "settings": "Settings",
+    "translations": "Translations",
+    "actions": {
+      "create": "Create",
+      "edit": "Edit",
+      "delete": "Delete",
+      "activate": "Activate",
+      "deactivate": "Deactivate",
+      "export": "Export",
+      "import": "Import"
+    }
+  },
+  "errors": {
+    "404": {
+      "title": "Page not found",
+      "message": "The requested page does not exist.",
+      "backHome": "Back to home"
+    },
+    "500": {
+      "title": "Server error",
+      "message": "An unexpected error occurred.",
+      "tryAgain": "Try again"
+    },
+    "unauthorized": {
+      "title": "Access denied",
+      "message": "You don't have permission to access this page.",
+      "login": "Sign in"
+    }
+  },
+  "validation": {
+    "required": "This field is required",
+    "email": "Please enter a valid email address",
+    "minLength": "At least {min} characters required",
+    "maxLength": "Maximum {max} characters allowed",
+    "passwordMatch": "Passwords do not match",
+    "invalidFormat": "Invalid format"
+  },
+  "notifications": {
+    "success": "Success",
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Information",
+    "saved": "Changes saved",
+    "deleted": "Item deleted",
+    "created": "Item created",
+    "updated": "Item updated"
+  }
+}
+```
+
+## i18n-Hooks und Utilities
+```typescript
+// lib/i18n.ts
+import { createSharedPathnamesNavigation } from 'next-intl/navigation';
+import { pathnames } from '@/config/i18n';
+
+export const { Link, redirect, usePathname, useRouter } = createSharedPathnamesNavigation({ pathnames });
+
+// i18n-Hook für Komponenten
+export function useTranslations(namespace?: string) {
+  const t = (key: string, values?: Record<string, any>): string => {
+    // Hier würde die tatsächliche Übersetzungslogik implementiert
+    // Für jetzt: Einfache Rückgabe des Keys
+    return key;
+  };
+
+  return { t };
+}
+
+// Datum-Formatierung
+export function formatDate(date: Date, locale: string): string {
+  const options: Intl.DateTimeFormatOptions = {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  };
+
+  return new Intl.DateTimeFormat(locale, options).format(date);
+}
+
+// Zeit-Formatierung
+export function formatTime(date: Date, locale: string): string {
+  const options: Intl.DateTimeFormatOptions = {
+    hour: '2-digit',
+    minute: '2-digit',
+  };
+
+  return new Intl.DateTimeFormat(locale, options).format(date);
+}
+
+// Zahl-Formatierung
+export function formatNumber(number: number, locale: string): string {
+  return new Intl.NumberFormat(locale).format(number);
+}
+
+// Währung-Formatierung
+export function formatCurrency(amount: number, locale: string, currency: string): string {
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency,
+  }).format(amount);
+}
+
+// Relative Zeit-Formatierung
+export function formatRelativeTime(date: Date, locale: string): string {
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) {
+    return locale === 'de' ? 'Gerade eben' : 'Just now';
+  }
+
+  if (diffInSeconds < 3600) {
+    const minutes = Math.floor(diffInSeconds / 60);
+    return locale === 'de' 
+      ? `vor ${minutes} Minute${minutes > 1 ? 'n' : ''}`
+      : `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+  }
+
+  if (diffInSeconds < 86400) {
+    const hours = Math.floor(diffInSeconds / 3600);
+    return locale === 'de'
+      ? `vor ${hours} Stunde${hours > 1 ? 'n' : ''}`
+      : `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  }
+
+  const days = Math.floor(diffInSeconds / 86400);
+  return locale === 'de'
+    ? `vor ${days} Tag${days > 1 ? 'en' : ''}`
+    : `${days} day${days > 1 ? 's' : ''} ago`;
+}
+
+// Pluralisierung
+export function pluralize(count: number, singular: string, plural: string, locale: string): string {
+  if (locale === 'de') {
+    return count === 1 ? singular : plural;
+  }
+  
+  // Englische Pluralisierung
+  return count === 1 ? singular : plural;
+}
+
+// RTL-Unterstützung
+export function isRTL(locale: string): boolean {
+  const rtlLocales = ['ar', 'he', 'fa', 'ur'];
+  return rtlLocales.includes(locale);
+}
+
+// Sprache wechseln
+export function switchLanguage(currentLocale: string): string {
+  return currentLocale === 'de' ? 'en' : 'de';
+}
+```
+
+## i18n-Provider
+```typescript
+// providers/i18n-provider.tsx
+'use client';
+
+import { NextIntlClientProvider } from 'next-intl';
+import { useLocale } from 'next-intl';
+import { ReactNode } from 'react';
+
+interface I18nProviderProps {
+  children: ReactNode;
+  messages: Record<string, any>;
+}
+
+export function I18nProvider({ children, messages }: I18nProviderProps) {
+  const locale = useLocale();
+
+  return (
+    <NextIntlClientProvider locale={locale} messages={messages}>
+      {children}
+    </NextIntlClientProvider>
+  );
+}
+```
+
+## Lokalisierte Komponenten
+```typescript
+// components/ui/localized-button.tsx
+'use client';
+
+import { Button, ButtonProps } from '@/components/ui/button';
+import { useTranslations } from '@/lib/i18n';
+
+interface LocalizedButtonProps extends ButtonProps {
+  translationKey: string;
+  translationValues?: Record<string, any>;
+}
+
+export function LocalizedButton({ 
+  translationKey, 
+  translationValues, 
+  children, 
+  ...props 
+}: LocalizedButtonProps) {
+  const { t } = useTranslations();
+  
+  return (
+    <Button {...props}>
+      {children || t(translationKey, translationValues)}
+    </Button>
+  );
+}
+
+// components/ui/localized-input.tsx
+'use client';
+
+import { Input, InputProps } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useTranslations } from '@/lib/i18n';
+
+interface LocalizedInputProps extends InputProps {
+  labelKey: string;
+  placeholderKey?: string;
+  translationValues?: Record<string, any>;
+}
+
+export function LocalizedInput({ 
+  labelKey, 
+  placeholderKey, 
+  translationValues, 
+  ...props 
+}: LocalizedInputProps) {
+  const { t } = useTranslations();
+  
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={props.id}>{t(labelKey, translationValues)}</Label>
+      <Input 
+        {...props} 
+        placeholder={placeholderKey ? t(placeholderKey, translationValues) : undefined}
+      />
+    </div>
+  );
+}
+```
+
+## Admin-Übersetzungsverwaltung
+```typescript
+// app/admin/translations/page.tsx
+'use client';
+
+import { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useTranslations } from '@/lib/i18n';
+
+interface TranslationEntry {
+  key: string;
+  de: string;
+  en: string;
+  namespace: string;
+}
+
+export default function TranslationsPage() {
+  const { t } = useTranslations();
+  const [translations, setTranslations] = useState<TranslationEntry[]>([]);
+  const [selectedNamespace, setSelectedNamespace] = useState('common');
+  const [newKey, setNewKey] = useState('');
+  const [newDeValue, setNewDeValue] = useState('');
+  const [newEnValue, setNewEnValue] = useState('');
+
+  const namespaces = ['common', 'auth', 'dashboard', 'learning', 'admin', 'errors'];
+
+  const addTranslation = () => {
+    if (newKey && newDeValue && newEnValue) {
+      const newTranslation: TranslationEntry = {
+        key: newKey,
+        de: newDeValue,
+        en: newEnValue,
+        namespace: selectedNamespace,
+      };
+      
+      setTranslations([...translations, newTranslation]);
+      setNewKey('');
+      setNewDeValue('');
+      setNewEnValue('');
+    }
+  };
+
+  const updateTranslation = (index: number, field: keyof TranslationEntry, value: string) => {
+    const updated = [...translations];
+    updated[index] = { ...updated[index], [field]: value };
+    setTranslations(updated);
+  };
+
+  const deleteTranslation = (index: number) => {
+    setTranslations(translations.filter((_, i) => i !== index));
+  };
+
+  const exportTranslations = () => {
+    const dataStr = JSON.stringify(translations, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `translations-${selectedNamespace}.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+  };
+
+  const importTranslations = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const imported = JSON.parse(e.target?.result as string);
+          setTranslations(imported);
+        } catch (error) {
+          console.error('Fehler beim Importieren der Übersetzungen:', error);
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  return (
+    <div className="container mx-auto p-6 space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Übersetzungsverwaltung</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Namespace-Auswahl */}
+          <div className="flex items-center space-x-4">
+            <Label>Namespace:</Label>
+            <Select value={selectedNamespace} onValueChange={setSelectedNamespace}>
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {namespaces.map(namespace => (
+                  <SelectItem key={namespace} value={namespace}>
+                    {namespace}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Neue Übersetzung hinzufügen */}
+          <div className="grid grid-cols-4 gap-4 items-end">
+            <div>
+              <Label>Schlüssel</Label>
+              <Input
+                value={newKey}
+                onChange={(e) => setNewKey(e.target.value)}
+                placeholder="z.B. welcome"
+              />
+            </div>
+            <div>
+              <Label>Deutsch</Label>
+              <Input
+                value={newDeValue}
+                onChange={(e) => setNewDeValue(e.target.value)}
+                placeholder="Willkommen"
+              />
+            </div>
+            <div>
+              <Label>Englisch</Label>
+              <Input
+                value={newEnValue}
+                onChange={(e) => setNewEnValue(e.target.value)}
+                placeholder="Welcome"
+              />
+            </div>
+            <Button onClick={addTranslation}>Hinzufügen</Button>
+          </div>
+
+          {/* Übersetzungen anzeigen */}
+          <div className="space-y-4">
+            {translations
+              .filter(t => t.namespace === selectedNamespace)
+              .map((translation, index) => (
+                <div key={index} className="grid grid-cols-4 gap-4 items-center p-4 border rounded">
+                  <Input
+                    value={translation.key}
+                    onChange={(e) => updateTranslation(index, 'key', e.target.value)}
+                  />
+                  <Input
+                    value={translation.de}
+                    onChange={(e) => updateTranslation(index, 'de', e.target.value)}
+                  />
+                  <Input
+                    value={translation.en}
+                    onChange={(e) => updateTranslation(index, 'en', e.target.value)}
+                  />
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => deleteTranslation(index)}
+                  >
+                    Löschen
+                  </Button>
+                </div>
+              ))}
+          </div>
+
+          {/* Import/Export */}
+          <div className="flex space-x-4">
+            <Button onClick={exportTranslations}>
+              Übersetzungen exportieren
+            </Button>
+            <div>
+              <input
+                type="file"
+                accept=".json"
+                onChange={importTranslations}
+                className="hidden"
+                id="import-file"
+              />
+              <Label htmlFor="import-file" className="cursor-pointer">
+                <Button variant="outline" asChild>
+                  <span>Übersetzungen importieren</span>
+                </Button>
+              </Label>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+## i18n-Integration in bestehende Komponenten
+```typescript
+// components/auth/login-form.tsx
+'use client';
+
+import { useTranslations } from '@/lib/i18n';
+import { LocalizedInput } from '@/components/ui/localized-input';
+import { LocalizedButton } from '@/components/ui/localized-button';
+
+export function LoginForm() {
+  const { t } = useTranslations();
+
+  return (
+    <form className="space-y-4">
+      <LocalizedInput
+        id="email"
+        type="email"
+        labelKey="auth.login.email"
+        placeholderKey="auth.login.email"
+      />
+      
+      <LocalizedInput
+        id="password"
+        type="password"
+        labelKey="auth.login.password"
+        placeholderKey="auth.login.password"
+      />
+      
+      <LocalizedButton 
+        type="submit" 
+        translationKey="auth.login.submit"
+        className="w-full"
+      />
+      
+      <p className="text-sm text-center">
+        {t('auth.login.noAccount')}{' '}
+        <a href="/register" className="text-blue-600 hover:underline">
+          {t('auth.login.register')}
+        </a>
+      </p>
+    </form>
+  );
+}
+```
+
+## Umgebungsvariablen für i18n
+```bash
+# .env
+# ========================================
+# INTERNATIONALISIERUNG (I18N)
+# ========================================
+I18N_ENABLED=true
+I18N_DEFAULT_LOCALE=de
+I18N_SUPPORTED_LOCALES=de,en
+I18N_FALLBACK_LOCALE=de
+I18N_LOCALE_DETECTION=true
+I18N_DOMAIN_LOCALES=true
+
+# i18n-Feature-Flags
+I18N_ADMIN_TRANSLATIONS=true
+I18N_AUTO_TRANSLATION=false
+I18N_CONTENT_TRANSLATION=true
+I18N_UI_TRANSLATION=true
+```
+description:
+globs:
+alwaysApply: true
+---

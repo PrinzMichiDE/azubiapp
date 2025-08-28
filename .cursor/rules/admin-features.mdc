@@ -1,0 +1,73 @@
+# Admin-Features und Ausbilder-Funktionen
+
+## Leistungsanalyse im Überblick
+- **Aggregierte Dashboards**: Heatmaps für Module, rote Bereiche für häufige Fehler
+- **Berichte**: Exportierbare PDFs/CSV mit Metriken (Abschlussraten, Zeitaufwand, Schwierigkeitslevel)
+- **Früherkennung**: Alerts für Azubis mit Verzögerungen
+- **Trend-Analysen**: Langzeitentwicklung der Lernleistungen
+
+## Empfehlungs-Engine-Verwaltung
+- **Admin-Panel**: Ausbilder passen Gewichtungen an (mehr Fokus auf Unternehmensspezifika)
+- **Regelbasierte Anpassungen**: Priorisierung von Pflichtmodulen
+- **KI-Parameter**: Feinabstimmung der Empfehlungsalgorithmen
+- **A/B-Tests**: Vergleich verschiedener Empfehlungsstrategien
+
+## Content-Management-System (CMS)
+- **Drag-and-Drop-Interface**: Hochladen von Inhalten (Videos, Artikel, PDFs)
+- **Modul-Bausteine**: Inhalte zu Lernpfaden zusammenstellen
+- **Tagging-System**: Tags für Suche und Empfehlungen
+- **Versionierung**: Änderungen tracken für einfache Aktualisierungen
+- **Workflow-Management**: Genehmigungsprozesse für neue Inhalte
+
+## Nahtlose HR-Integration
+- **API-Schnittstellen**: Automatische Synchronisation mit HR-Systemen (SAP, Workday)
+- **Compliance-Tracking**: Automatische Berichte für gesetzliche Anforderungen
+- **Zertifikats-Management**: Digitale Zertifikate für abgeschlossene Module
+- **Anwesenheits-Tracking**: Integration mit Zeiterfassungssystemen
+
+## Benutzer-Management
+- **Rollen-System**: Azubi, Ausbilder, Admin, HR-Mitarbeiter
+- **Berechtigungen**: Granulare Zugriffskontrolle auf Funktionen und Daten
+- **Gruppen-Management**: Organisation von Azubis in Teams/Ausbildungsgruppen
+- **Bulk-Operationen**: Massenbearbeitung von Benutzerdaten
+
+## Komponenten-Struktur
+```typescript
+// Admin-Dashboard Interface
+interface AdminDashboard {
+  overview: DashboardOverview;
+  analytics: AnalyticsData;
+  alerts: SystemAlert[];
+  recentActivity: ActivityLog[];
+}
+
+// Dashboard-Übersicht
+interface DashboardOverview {
+  totalUsers: number;
+  activeUsers: number;
+  completedModules: number;
+  averageScore: number;
+  topPerformers: User[];
+  strugglingUsers: User[];
+}
+
+// System-Alert
+interface SystemAlert {
+  id: string;
+  type: 'warning' | 'error' | 'info';
+  message: string;
+  severity: 'low' | 'medium' | 'high';
+  timestamp: Date;
+  resolved: boolean;
+}
+```
+
+## Sicherheit und Compliance
+- **Audit-Logs**: Vollständige Protokollierung aller Admin-Aktionen
+- **Datenschutz**: DSGVO-konforme Datenverarbeitung
+- **Backup-Strategien**: Regelmäßige Sicherung aller Daten
+- **Verschlüsselung**: Ende-zu-Ende-Verschlüsselung für sensible Daten
+description:
+globs:
+alwaysApply: true
+---

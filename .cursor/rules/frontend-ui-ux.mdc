@@ -1,0 +1,101 @@
+# Frontend UI/UX-Prinzipien für LXP-Plattform
+
+## Design-Philosophie
+- **Learner-Centered**: Benutzeroberfläche optimiert für Azubis und deren Lernbedürfnisse
+- **Modern & Minimalistisch**: Sauberes Design mit Fokus auf Funktionalität
+- **Gamification-Integration**: Spielerische Elemente für höhere Motivation
+- **Barrierefreiheit**: WCAG 2.1 Compliance für alle Benutzer
+
+## Visuelle Hierarchie
+- **Primäre Elemente**: Dashboard, Lernpfade im Vordergrund
+- **Sekundäre Elemente**: Einstellungen, Profile im Menü versteckt
+- **Progressive Disclosure**: Informationen schrittweise aufdecken, Überforderung vermeiden
+- **Konsistente Abstände**: 4px Grid-System mit Tailwind CSS
+
+## Farbschema und Theming
+```typescript
+// Design-System Farben
+const colors = {
+  // Primärfarben für Lernen
+  primary: {
+    50: '#eff6ff',   // Helles Blau
+    500: '#3b82f6',  // Hauptblau
+    900: '#1e3a8a',  // Dunkles Blau
+  },
+  // Erfolgsfarben für Gamification
+  success: {
+    50: '#f0fdf4',
+    500: '#22c55e',  // Grün für Erfolge
+    900: '#14532d',
+  },
+  // Warnung und Fehler
+  warning: '#f59e0b',
+  error: '#ef4444',
+  // Neutral
+  neutral: {
+    50: '#f9fafb',
+    900: '#111827',
+  }
+};
+
+// Dark Mode Support
+const darkModeColors = {
+  background: '#0f172a',
+  surface: '#1e293b',
+  text: '#f8fafc',
+};
+```
+
+## Interaktivität und Animationen
+- **Hover-Effekte**: Subtile Übergänge für bessere UX
+- **Framer Motion**: Für komplexe Animationen und Gamification
+- **Loading States**: Skelett-Loader für bessere Performance-Wahrnehmung
+- **Micro-Interaktionen**: Kleine Animationen für Feedback
+
+## Responsive Design
+- **Mobile-First**: Alle Komponenten für mobile Geräte optimieren
+- **Breakpoints**: Tailwind CSS (sm: 640px, md: 768px, lg: 1024px, xl: 1280px)
+- **Touch-Optimiert**: Mindestens 44px Touch-Targets
+- **Swipe-Gesten**: Für Lernpfad-Navigation auf mobilen Geräten
+
+## Accessibility (WCAG 2.1)
+- **ARIA-Labels**: Aussagekräftige Labels für alle interaktiven Elemente
+- **Tastaturnavigation**: Vollständige Tastaturnavigation
+- **Kontrastverhältnisse**: Mindestens 4.5:1 für normale Texte
+- **Screen-Reader**: Semantische HTML-Struktur
+- **Fokus-Management**: Klare Fokus-Indikatoren
+
+## Komponenten-Design-Patterns
+```typescript
+// Beispiel für eine responsive Komponente
+interface ResponsiveComponentProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function ResponsiveComponent({ children, className }: ResponsiveComponentProps) {
+  return (
+    <div className={cn(
+      // Mobile-First Ansatz
+      "w-full p-4",
+      // Tablet
+      "md:p-6 md:max-w-2xl",
+      // Desktop
+      "lg:max-w-4xl lg:p-8",
+      className
+    )}>
+      {children}
+    </div>
+  );
+}
+```
+
+## Performance-Optimierung
+- **Lazy Loading**: Bilder und Videos bei Bedarf laden
+- **Next.js Image**: Optimierte Bildkomponente verwenden
+- **Code-Splitting**: Dynamische Imports für bessere Bundle-Größe
+- **Skeleton Loading**: Placeholder während Daten geladen werden
+description:
+globs:
+alwaysApply: true
+---

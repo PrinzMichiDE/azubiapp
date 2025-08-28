@@ -1,0 +1,1154 @@
+# Automatische Dokumentation in Next.js
+
+## Dokumentationsübersicht
+- **Technische Dokumentation**: Für Entwickler und DevOps-Teams
+- **Benutzerdokumentation**: Für Azubis, Ausbilder und Administratoren
+- **API-Dokumentation**: Für externe Entwickler und Integrationen
+- **Automatisierung**: Code- und datengetriebene Dokumentationsgenerierung
+- **Integration**: Nahtlose Einbindung in Next.js-Architektur
+
+## Technische Dokumentation (Docusaurus)
+```typescript
+// docusaurus.config.js
+module.exports = {
+  title: 'Azubi LXP Technical Documentation',
+  tagline: 'Entwickler-Dokumentation für die Learning Experience Platform',
+  url: process.env.APP_URL || 'https://azubi-lxp.com',
+  baseUrl: '/docs/dev/',
+  favicon: 'img/favicon.ico',
+  organizationName: 'azubi-lxp',
+  projectName: 'technical-docs',
+  
+  plugins: [
+    'docusaurus-plugin-typedoc',
+    'docusaurus-plugin-mermaid',
+    'docusaurus-plugin-sitemap',
+  ],
+  
+  presets: [
+    [
+      '@docusaurus/preset-classic',
+      {
+        docs: {
+          sidebarPath: require.resolve('./sidebars.js'),
+          editUrl: 'https://github.com/azubi-lxp/docs/edit/main/',
+          routeBasePath: '/',
+        },
+        blog: {
+          showReadingTime: true,
+          editUrl: 'https://github.com/azubi-lxp/docs/edit/main/blog/',
+        },
+        theme: {
+          customCss: require.resolve('./src/css/custom.css'),
+        },
+      },
+    ],
+  ],
+  
+  themeConfig: {
+    navbar: {
+      title: 'LXP Tech Docs',
+      logo: {
+        alt: 'LXP Logo',
+        src: 'img/logo.svg',
+      },
+      items: [
+        {
+          type: 'docSidebar',
+          sidebarId: 'tutorialSidebar',
+          position: 'left',
+          label: 'Tutorial',
+        },
+        {
+          type: 'docSidebar',
+          sidebarId: 'apiSidebar',
+          position: 'left',
+          label: 'API',
+        },
+        {
+          type: 'docSidebar',
+          sidebarId: 'architectureSidebar',
+          position: 'left',
+          label: 'Architektur',
+        },
+        {
+          href: 'https://github.com/azubi-lxp',
+          label: 'GitHub',
+          position: 'right',
+        },
+      ],
+    },
+    footer: {
+      style: 'dark',
+      links: [
+        {
+          title: 'Docs',
+          items: [
+            {
+              label: 'Tutorial',
+              to: '/',
+            },
+            {
+              label: 'API',
+              to: '/api/',
+            },
+          ],
+        },
+        {
+          title: 'Community',
+          items: [
+            {
+              label: 'Discord',
+              href: 'https://discord.gg/azubi-lxp',
+            },
+            {
+              label: 'GitHub',
+              href: 'https://github.com/azubi-lxp',
+            },
+          ],
+        },
+      ],
+      copyright: `Copyright © ${new Date().getFullYear()} Azubi LXP. Built with Docusaurus.`,
+    },
+  },
+  
+  customFields: {
+    // Konfiguration für Typedoc-Plugin
+    typedoc: {
+      entryPoints: ['../src/**/*.ts'],
+      out: 'docs/api',
+      exclude: ['**/node_modules/**', '**/dist/**'],
+      theme: 'default',
+      readme: 'none',
+      name: 'LXP API Reference',
+      excludePrivate: true,
+      excludeProtected: true,
+      excludeExternals: true,
+    },
+    
+    // Konfiguration für Mermaid-Plugin
+    mermaid: {
+      theme: 'default',
+      options: {
+        maxTextSize: 50000,
+        htmlLabels: true,
+      },
+    },
+  },
+};
+```
+
+## JSDoc-Dokumentation für API-Routen
+```typescript
+// app/api/v1/recommendations/route.ts
+/**
+ * @route POST /api/v1/recommendations
+ * @desc Generiert personalisierte Lernempfehlungen für Azubis
+ * @access Protected - Benötigt gültigen JWT-Token
+ * @param {Object} req.body - Request Body
+ * @param {string} req.body.userId - Eindeutige Benutzer-ID
+ * @param {string[]} req.body.learningHistory - Array der bereits absolvierten Module
+ * @param {string} req.body.currentModule - Aktuell bearbeitetes Modul (optional)
+ * @param {Object} req.body.preferences - Benutzerpräferenzen (optional)
+ * @param {string[]} req.body.preferences.interests - Interessengebiete
+ * @param {string} req.body.preferences.difficulty - Gewünschte Schwierigkeit
+ * @returns {Object} 200 - Erfolgreiche Empfehlungen
+ * @returns {Object} 400 - Ungültige Eingabedaten
+ * @returns {Object} 401 - Nicht autorisiert
+ * @returns {Object} 500 - Server-Fehler
+ * 
+ * @example
+ * // cURL
+ * curl -X POST https://azubi-lxp.com/api/v1/recommendations \
+ *   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+ *   -H "Content-Type: application/json" \
+ *   -d '{
+ *     "userId": "uuid",
+ *     "learningHistory": ["module1", "module2"],
+ *     "preferences": {
+ *       "interests": ["Elektrotechnik", "Programmierung"],
+ *       "difficulty": "intermediate"
+ *     }
+ *   }'
+ * 
+ * @example
+ * // JavaScript
+ * const response = await fetch('/api/v1/recommendations', {
+ *   method: 'POST',
+ *   headers: {
+ *     'Authorization': 'Bearer ' + token,
+ *     'Content-Type': 'application/json'
+ *   },
+ *   body: JSON.stringify({
+ *     userId: 'uuid',
+ *     learningHistory: ['module1', 'module2']
+ *   })
+ * });
+ * const recommendations = await response.json();
+ */
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    
+    // Validierung der Eingabedaten
+    const { userId, learningHistory, currentModule, preferences } = body;
+    
+    if (!userId || !Array.isArray(learningHistory)) {
+      return NextResponse.json(
+        { 
+          error: 'Validation Error',
+          message: 'userId und learningHistory sind erforderlich',
+          details: {
+            userId: !userId ? 'Fehlt' : 'OK',
+            learningHistory: !Array.isArray(learningHistory) ? 'Muss Array sein' : 'OK'
+          }
+        },
+        { status: 400 }
+      );
+    }
+
+    // OpenAI-Integration für personalisierte Empfehlungen
+    const recommendations = await generateRecommendations({
+      userId,
+      learningHistory,
+      currentModule,
+      preferences,
+    });
+
+    // Audit-Logging
+    await auditLogger.log('recommendations_generated', {
+      userId,
+      moduleCount: recommendations.length,
+      timestamp: new Date().toISOString(),
+    });
+
+    return NextResponse.json({
+      success: true,
+      recommendations,
+      generatedAt: new Date().toISOString(),
+      requestId: generateRequestId(),
+    });
+
+  } catch (error) {
+    console.error('Fehler bei der Empfehlungsgenerierung:', error);
+    
+    // Audit-Logging für Fehler
+    await auditLogger.log('recommendations_error', {
+      error: error.message,
+      stack: error.stack,
+      timestamp: new Date().toISOString(),
+    });
+
+    return NextResponse.json(
+      { 
+        error: 'Internal Server Error',
+        message: 'Empfehlungen konnten nicht generiert werden',
+        timestamp: new Date().toISOString(),
+        requestId: generateRequestId(),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * @route GET /api/v1/recommendations
+ * @desc Ruft gespeicherte Empfehlungen für einen Benutzer ab
+ * @access Protected - Benötigt gültigen JWT-Token
+ * @param {string} searchParams.userId - Benutzer-ID
+ * @param {string} searchParams.limit - Maximale Anzahl Empfehlungen (Standard: 10)
+ * @returns {Object} 200 - Erfolgreiche Abfrage
+ * @returns {Object} 401 - Nicht autorisiert
+ * @returns {Object} 404 - Benutzer nicht gefunden
+ */
+export async function GET(request: Request) {
+  // Implementation...
+}
+```
+
+## Automatische Dokumentationsgenerierung
+```typescript
+// scripts/generate-technical-docs.js
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+class TechnicalDocsGenerator {
+  constructor() {
+    this.baseDir = process.cwd();
+    this.docsDir = path.join(this.baseDir, 'docs');
+    this.srcDir = path.join(this.baseDir, 'src');
+    this.appDir = path.join(this.baseDir, 'app');
+  }
+
+  async generateAll() {
+    console.log('🚀 Starte Generierung der technischen Dokumentation...');
+    
+    try {
+      // 1. Verzeichnisstruktur scannen
+      await this.generateDirectoryStructure();
+      
+      // 2. API-Dokumentation aus JSDoc generieren
+      await this.generateAPIDocs();
+      
+      // 3. Architektur-Diagramme erstellen
+      await this.generateArchitectureDiagrams();
+      
+      // 4. Setup-Anleitungen generieren
+      await this.generateSetupDocs();
+      
+      // 5. Sicherheits-Dokumentation
+      await this.generateSecurityDocs();
+      
+      // 6. Testing-Dokumentation
+      await this.generateTestingDocs();
+      
+      console.log('✅ Technische Dokumentation erfolgreich generiert!');
+      
+    } catch (error) {
+      console.error('❌ Fehler bei der Generierung:', error);
+      process.exit(1);
+    }
+  }
+
+  async generateDirectoryStructure() {
+    console.log('📁 Generiere Verzeichnisstruktur...');
+    
+    const structure = this.scanDirectory(this.appDir);
+    const markdown = this.convertStructureToMarkdown(structure);
+    
+    const outputPath = path.join(this.docsDir, 'technical', 'directory-structure.md');
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, markdown);
+  }
+
+  scanDirectory(dir, level = 0) {
+    const items = fs.readdirSync(dir);
+    const structure = [];
+    
+    for (const item of items) {
+      const fullPath = path.join(dir, item);
+      const stat = fs.statSync(fullPath);
+      
+      if (stat.isDirectory()) {
+        const subItems = this.scanDirectory(fullPath, level + 1);
+        structure.push({
+          type: 'directory',
+          name: item,
+          level,
+          children: subItems,
+        });
+      } else if (item.endsWith('.ts') || item.endsWith('.tsx')) {
+        structure.push({
+          type: 'file',
+          name: item,
+          level,
+          path: fullPath,
+        });
+      }
+    }
+    
+    return structure;
+  }
+
+  convertStructureToMarkdown(structure, level = 0) {
+    let markdown = '# Verzeichnisstruktur der LXP-Plattform\n\n';
+    markdown += 'Diese Dokumentation zeigt die Struktur der Next.js-Anwendung.\n\n';
+    
+    for (const item of structure) {
+      const indent = '  '.repeat(level);
+      
+      if (item.type === 'directory') {
+        markdown += `${indent}- 📁 **${item.name}/**\n`;
+        if (item.children && item.children.length > 0) {
+          markdown += this.convertStructureToMarkdown(item.children, level + 1);
+        }
+      } else {
+        const icon = this.getFileIcon(item.name);
+        markdown += `${indent}- ${icon} \`${item.name}\`\n`;
+      }
+    }
+    
+    return markdown;
+  }
+
+  getFileIcon(filename) {
+    if (filename.endsWith('.ts')) return '📄';
+    if (filename.endsWith('.tsx')) return '⚛️';
+    if (filename.endsWith('.json')) return '⚙️';
+    if (filename.endsWith('.md')) return '📝';
+    return '📄';
+  }
+
+  async generateAPIDocs() {
+    console.log('🔌 Generiere API-Dokumentation...');
+    
+    try {
+      // Typedoc ausführen
+      execSync('npx typedoc --out docs/technical/api src/**/*.ts', {
+        cwd: this.baseDir,
+        stdio: 'inherit',
+      });
+      
+      // OpenAPI-Schema generieren
+      await this.generateOpenAPISchema();
+      
+    } catch (error) {
+      console.error('Fehler bei der API-Dokumentationsgenerierung:', error);
+    }
+  }
+
+  async generateOpenAPISchema() {
+    const openAPIConfig = {
+      openapi: '3.0.0',
+      info: {
+        title: 'Azubi LXP API',
+        version: '1.0.0',
+        description: 'Learning Experience Platform API',
+      },
+      servers: [
+        {
+          url: process.env.APP_URL || 'https://azubi-lxp.com',
+          description: 'Produktionsserver',
+        },
+      ],
+      paths: {},
+      components: {
+        schemas: {},
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
+          },
+        },
+      },
+    };
+
+    // API-Routen scannen und OpenAPI-Schema generieren
+    const apiRoutes = this.scanAPIRoutes();
+    openAPIConfig.paths = this.generateOpenAPIPaths(apiRoutes);
+    
+    const outputPath = path.join(this.docsDir, 'technical', 'openapi.json');
+    fs.writeFileSync(outputPath, JSON.stringify(openAPIConfig, null, 2));
+  }
+
+  scanAPIRoutes() {
+    const apiDir = path.join(this.appDir, 'api');
+    const routes = [];
+    
+    if (fs.existsSync(apiDir)) {
+      this.scanAPIDirectory(apiDir, '', routes);
+    }
+    
+    return routes;
+  }
+
+  scanAPIDirectory(dir, basePath, routes) {
+    const items = fs.readdirSync(dir);
+    
+    for (const item of items) {
+      const fullPath = path.join(dir, item);
+      const stat = fs.statSync(fullPath);
+      
+      if (stat.isDirectory()) {
+        const newBasePath = basePath ? `${basePath}/${item}` : item;
+        this.scanAPIDirectory(fullPath, newBasePath, routes);
+      } else if (item === 'route.ts' || item === 'route.tsx') {
+        routes.push({
+          path: basePath,
+          fullPath,
+        });
+      }
+    }
+  }
+
+  generateOpenAPIPaths(routes) {
+    const paths = {};
+    
+    for (const route of routes) {
+      const pathKey = `/${route.path}`;
+      paths[pathKey] = {
+        get: {
+          summary: `GET ${pathKey}`,
+          description: `API-Endpoint für ${pathKey}`,
+          responses: {
+            '200': {
+              description: 'Erfolgreiche Antwort',
+            },
+            '401': {
+              description: 'Nicht autorisiert',
+            },
+            '500': {
+              description: 'Server-Fehler',
+            },
+          },
+        },
+        post: {
+          summary: `POST ${pathKey}`,
+          description: `API-Endpoint für ${pathKey}`,
+          responses: {
+            '201': {
+              description: 'Erfolgreich erstellt',
+            },
+            '400': {
+              description: 'Ungültige Eingabedaten',
+            },
+            '401': {
+              description: 'Nicht autorisiert',
+            },
+          },
+        },
+      };
+    }
+    
+    return paths;
+  }
+
+  async generateArchitectureDiagrams() {
+    console.log('🏗️ Generiere Architektur-Diagramme...');
+    
+    const mermaidDiagrams = {
+      systemOverview: `
+graph TB
+    A[Azubi Browser] --> B[Next.js Frontend]
+    B --> C[Next.js API Routes]
+    C --> D[Prisma ORM]
+    D --> E[PostgreSQL]
+    C --> F[Redis Cache]
+    C --> G[OpenAI API]
+    C --> H[Auth.js]
+    H --> I[JWT Tokens]
+    B --> J[shadcn/ui Components]
+    B --> K[PWA Service Worker]
+    
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
+    style C fill:#e8f5e8
+    style D fill:#fff3e0
+    style E fill:#fce4ec
+      `,
+      
+      dataFlow: `
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant A as API
+    participant P as Prisma
+    participant D as Database
+    
+    U->>F: Login
+    F->>A: POST /api/auth/login
+    A->>P: validateUser()
+    P->>D: SELECT * FROM users
+    D-->>P: User data
+    P-->>A: User object
+    A-->>F: JWT token
+    F-->>U: Dashboard
+      `,
+      
+      securityFlow: `
+graph LR
+    A[Request] --> B[Rate Limiter]
+    B --> C[CORS Check]
+    C --> D[Auth Middleware]
+    D --> E[Input Validation]
+    E --> F[API Handler]
+    F --> G[Audit Logging]
+    G --> H[Response]
+    
+    style B fill:#ffebee
+    style C fill:#e8f5e8
+    style D fill:#fff3e0
+    style E fill:#f3e5f5
+    style G fill:#e0f2f1
+      `,
+    };
+
+    for (const [name, diagram] of Object.entries(mermaidDiagrams)) {
+      const markdown = `# ${name.charAt(0).toUpperCase() + name.slice(1)}\n\n\`\`\`mermaid\n${diagram}\n\`\`\``;
+      const outputPath = path.join(this.docsDir, 'technical', 'diagrams', `${name}.md`);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, markdown);
+    }
+  }
+
+  async generateSetupDocs() {
+    console.log('⚙️ Generiere Setup-Dokumentation...');
+    
+    const setupDocs = {
+      'local-development.md': this.generateLocalDevelopmentDoc(),
+      'deployment.md': this.generateDeploymentDoc(),
+      'environment-variables.md': this.generateEnvironmentVariablesDoc(),
+    };
+
+    for (const [filename, content] of Object.entries(setupDocs)) {
+      const outputPath = path.join(this.docsDir, 'technical', 'setup', filename);
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, content);
+    }
+  }
+
+  generateLocalDevelopmentDoc() {
+    return `# Lokale Entwicklung
+
+## Voraussetzungen
+
+- Node.js 18+ 
+- npm oder yarn
+- PostgreSQL 14+
+- Redis 6+
+
+## Installation
+
+\`\`\`bash
+# Repository klonen
+git clone https://github.com/azubi-lxp/azubi-lxp.git
+cd azubi-lxp
+
+# Dependencies installieren
+npm install
+
+# Umgebungsvariablen konfigurieren
+cp .env.example .env.local
+# .env.local bearbeiten
+
+# Datenbank einrichten
+npm run db:setup
+
+# Entwicklungsserver starten
+npm run dev
+\`\`\`
+
+## Verfügbare Scripts
+
+- \`npm run dev\` - Entwicklungsserver
+- \`npm run build\` - Produktionsbuild
+- \`npm run start\` - Produktionsserver
+- \`npm run lint\` - ESLint
+- \`npm run type-check\` - TypeScript-Prüfung
+- \`npm run test\` - Tests ausführen
+`;
+  }
+
+  generateDeploymentDoc() {
+    return `# Deployment
+
+## Docker
+
+\`\`\`bash
+# Produktionsbuild
+docker-compose -f docker-compose.prod.yml up -d
+
+# Staging
+docker-compose -f docker-compose.staging.yml up -d
+\`\`\`
+
+## Vercel
+
+\`\`\`bash
+# Deployment
+vercel --prod
+
+# Umgebungsvariablen setzen
+vercel env add NEXTAUTH_SECRET
+vercel env add DATABASE_URL
+\`\`\`
+
+## GitHub Actions
+
+Automatisches Deployment bei Push auf main-Branch.
+`;
+  }
+
+  generateEnvironmentVariablesDoc() {
+    return `# Umgebungsvariablen
+
+## Erforderliche Variablen
+
+\`\`\`env
+# App
+APP_URL=https://azubi-lxp.com
+NEXTAUTH_URL=https://azubi-lxp.com
+NEXTAUTH_SECRET=your-secure-secret
+
+# Datenbank
+DATABASE_URL=postgresql://user:password@localhost:5432/azubi_lxp
+REDIS_URL=redis://localhost:6379
+
+# Authentifizierung
+MICROSOFT_ENTRA_ID_CLIENT_ID=your-client-id
+MICROSOFT_ENTRA_ID_CLIENT_SECRET=your-client-secret
+
+# OpenAI
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+# E-Mail
+RESEND_API_KEY=re_...
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+\`\`\`
+
+## Optionale Variablen
+
+\`\`\`env
+# Features
+GAMIFICATION_ENABLED=true
+AI_RECOMMENDATIONS_ENABLED=true
+PWA_ENABLED=true
+
+# Monitoring
+SENTRY_DSN=https://...
+PROMETHEUS_ENABLED=true
+\`\`\`
+`;
+  }
+
+  async generateSecurityDocs() {
+    console.log('🔒 Generiere Sicherheits-Dokumentation...');
+    
+    const securityDoc = `# Sicherheitskonzept
+
+## Authentifizierung
+
+- **Auth.js**: JWT-basierte Authentifizierung
+- **OAuth 2.0**: Microsoft Entra ID Integration
+- **Session-Management**: Sichere Session-Handhabung
+
+## Autorisierung
+
+- **RBAC**: Role-Based Access Control
+- **Berechtigungen**: Granulare Zugriffskontrolle
+- **Middleware**: Automatische Berechtigungsprüfung
+
+## API-Sicherheit
+
+- **Rate Limiting**: Schutz vor Brute-Force-Angriffen
+- **Input Validation**: Zod-basierte Validierung
+- **CORS**: Strenge Cross-Origin-Richtlinien
+- **Security Headers**: CSP, HSTS, XSS-Protection
+
+## Datenschutz
+
+- **DSGVO-Compliance**: Vollständige Konformität
+- **Verschlüsselung**: TLS, DB-Verschlüsselung
+- **Audit-Logging**: Vollständige Protokollierung
+- **Datenminimierung**: Nur notwendige Daten speichern
+
+## Monitoring
+
+- **Security Alerts**: Automatische Benachrichtigungen
+- **Audit-Logs**: Vollständige Aktivitätsprotokollierung
+- **Performance Monitoring**: Überwachung langsamer Requests
+`;
+
+    const outputPath = path.join(this.docsDir, 'technical', 'security.md');
+    fs.writeFileSync(outputPath, securityDoc);
+  }
+
+  async generateTestingDocs() {
+    console.log('🧪 Generiere Testing-Dokumentation...');
+    
+    const testingDoc = `# Testing-Strategie
+
+## Unit Tests
+
+- **Jest**: Test-Framework
+- **Testing Library**: React-Komponenten-Tests
+- **Coverage**: Mindestens 80% Code-Coverage
+
+## Integration Tests
+
+- **API-Tests**: Endpoint-Tests mit Supertest
+- **Database-Tests**: Prisma-Integration
+- **Auth-Tests**: Authentifizierungs-Flows
+
+## E2E Tests
+
+- **Cypress**: Browser-basierte Tests
+- **Critical Paths**: Wichtige Benutzer-Flows
+- **Cross-Browser**: Chrome, Firefox, Safari
+
+## Test-Scripts
+
+\`\`\`bash
+# Alle Tests
+npm run test
+
+# Unit Tests
+npm run test:unit
+
+# Integration Tests
+npm run test:integration
+
+# E2E Tests
+npm run test:e2e
+
+# Coverage Report
+npm run test:coverage
+\`\`\`
+
+## Test-Daten
+
+- **Factories**: Generierung von Test-Daten
+- **Fixtures**: Vordefinierte Test-Szenarien
+- **Cleanup**: Automatische Bereinigung
+`;
+    
+    const outputPath = path.join(this.docsDir, 'technical', 'testing.md');
+    fs.writeFileSync(outputPath, testingDoc);
+  }
+}
+
+// Generator ausführen
+if (require.main === module) {
+  const generator = new TechnicalDocsGenerator();
+  generator.generateAll();
+}
+
+module.exports = TechnicalDocsGenerator;
+```
+
+## Benutzerdokumentation (KI-generiert)
+```typescript
+// lib/docs/user-docs-generator.ts
+import OpenAI from 'openai';
+import { prisma } from '@/lib/prisma';
+
+interface UserDocTemplate {
+  title: string;
+  description: string;
+  content: string;
+  targetAudience: 'azubi' | 'ausbilder' | 'admin';
+  category: string;
+}
+
+class UserDocsGenerator {
+  private openai: OpenAI;
+
+  constructor() {
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: process.env.OPENAI_BASE_URL,
+    });
+  }
+
+  async generateAllUserDocs() {
+    console.log('📚 Starte Generierung der Benutzerdokumentation...');
+
+    try {
+      // 1. Berufs-spezifische Dokumentation generieren
+      await this.generateCourseDocs();
+      
+      // 2. Feature-Dokumentation generieren
+      await this.generateFeatureDocs();
+      
+      // 3. Admin-Dokumentation generieren
+      await this.generateAdminDocs();
+      
+      console.log('✅ Benutzerdokumentation erfolgreich generiert!');
+      
+    } catch (error) {
+      console.error('❌ Fehler bei der Generierung:', error);
+    }
+  }
+
+  async generateCourseDocs() {
+    const courses = await prisma.course.findMany({
+      include: {
+        modules: true,
+        learningPaths: true,
+      },
+    });
+
+    for (const course of courses) {
+      await this.generateCourseDoc(course);
+    }
+  }
+
+  async generateCourseDoc(course: any) {
+    const prompt = `
+Erstelle eine benutzerfreundliche Anleitung für Azubis im Beruf "${course.beruf}".
+Die Anleitung sollte folgende Aspekte abdecken:
+
+1. Erste Schritte nach der Registrierung
+2. Navigation im Dashboard
+3. Absolvieren von Lernmodulen
+4. Verfolgen des Fortschritts
+5. Nutzung der Community-Features
+6. Gamification-Elemente
+
+Verwende eine klare, verständliche Sprache und strukturierte Schritte.
+Format: Markdown mit deutschen Texten.
+`;
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: process.env.OPENAI_MODEL || 'gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content: 'Du bist ein Experte für Benutzerdokumentation und Lernplattformen. Erstelle klare, strukturierte Anleitungen auf Deutsch.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        await this.saveUserDoc({
+          title: `Anleitung für ${course.beruf}`,
+          description: `Benutzeranleitung für Azubis im Beruf ${course.beruf}`,
+          content,
+          targetAudience: 'azubi',
+          category: 'courses',
+        });
+      }
+    } catch (error) {
+      console.error(`Fehler bei der Generierung der Dokumentation für ${course.beruf}:`, error);
+    }
+  }
+
+  async generateFeatureDocs() {
+    const features = [
+      {
+        name: 'Dashboard',
+        description: 'Persönliches Dashboard für Azubis',
+        targetAudience: 'azubi' as const,
+      },
+      {
+        name: 'Lernpfade',
+        description: 'Strukturierte Lernwege durch Module',
+        targetAudience: 'azubi' as const,
+      },
+      {
+        name: 'Community',
+        description: 'Soziale Lernfunktionen und Foren',
+        targetAudience: 'azubi' as const,
+      },
+      {
+        name: 'Gamification',
+        description: 'Punkte, Badges und Leaderboards',
+        targetAudience: 'azubi' as const,
+      },
+      {
+        name: 'Analysen',
+        description: 'Fortschrittsanalysen und Berichte',
+        targetAudience: 'ausbilder' as const,
+      },
+      {
+        name: 'CMS',
+        description: 'Content Management System',
+        targetAudience: 'ausbilder' as const,
+      },
+    ];
+
+    for (const feature of features) {
+      await this.generateFeatureDoc(feature);
+    }
+  }
+
+  async generateFeatureDoc(feature: any) {
+    const prompt = `
+Erstelle eine detaillierte Anleitung für das Feature "${feature.name}" in der LXP-Plattform.
+Zielgruppe: ${feature.targetAudience === 'azubi' ? 'Auszubildende' : 'Ausbilder'}
+
+Die Anleitung sollte enthalten:
+1. Was ist das Feature?
+2. Wie wird es verwendet?
+3. Schritt-für-Schritt-Anleitung
+4. Häufige Fragen und Antworten
+5. Tipps und Tricks
+
+Verwende eine klare, verständliche Sprache.
+Format: Markdown mit deutschen Texten.
+`;
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: process.env.OPENAI_MODEL || 'gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content: 'Du bist ein Experte für Benutzerdokumentation und Lernplattformen. Erstelle klare, strukturierte Anleitungen auf Deutsch.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        await this.saveUserDoc({
+          title: `${feature.name} - Anleitung`,
+          description: feature.description,
+          content,
+          targetAudience: feature.targetAudience,
+          category: 'features',
+        });
+      }
+    } catch (error) {
+      console.error(`Fehler bei der Generierung der Feature-Dokumentation für ${feature.name}:`, error);
+    }
+  }
+
+  async generateAdminDocs() {
+    const adminFeatures = [
+      'Benutzerverwaltung',
+      'Rollen und Berechtigungen',
+      'Audit-Logs',
+      'System-Einstellungen',
+      'Backup und Wiederherstellung',
+    ];
+
+    for (const feature of adminFeatures) {
+      await this.generateAdminDoc(feature);
+    }
+  }
+
+  async generateAdminDoc(feature: string) {
+    const prompt = `
+Erstelle eine detaillierte Anleitung für Administratoren zum Feature "${feature}" in der LXP-Plattform.
+Zielgruppe: System-Administratoren
+
+Die Anleitung sollte enthalten:
+1. Was ist das Feature?
+2. Wann wird es verwendet?
+3. Schritt-für-Schritt-Anleitung
+4. Sicherheitsaspekte
+5. Troubleshooting
+
+Verwende eine klare, technische Sprache.
+Format: Markdown mit deutschen Texten.
+`;
+
+    try {
+      const completion = await this.openai.chat.completions.create({
+        model: process.env.OPENAI_MODEL || 'gpt-4',
+        messages: [
+          {
+            role: 'system',
+            content: 'Du bist ein Experte für Systemadministration und Dokumentation. Erstelle klare, technische Anleitungen auf Deutsch.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
+      });
+
+      const content = completion.choices[0]?.message?.content;
+      if (content) {
+        await this.saveUserDoc({
+          title: `${feature} - Admin-Anleitung`,
+          description: `Administrator-Anleitung für ${feature}`,
+          content,
+          targetAudience: 'admin',
+          category: 'admin',
+        });
+      }
+    } catch (error) {
+      console.error(`Fehler bei der Generierung der Admin-Dokumentation für ${feature}:`, error);
+    }
+  }
+
+  async saveUserDoc(doc: UserDocTemplate) {
+    try {
+      // Dokument in der Datenbank speichern
+      await prisma.userDocumentation.upsert({
+        where: {
+          title_targetAudience: {
+            title: doc.title,
+            targetAudience: doc.targetAudience,
+          },
+        },
+        update: {
+          description: doc.description,
+          content: doc.content,
+          category: doc.category,
+          updatedAt: new Date(),
+        },
+        create: {
+          title: doc.title,
+          description: doc.description,
+          content: doc.content,
+          targetAudience: doc.targetAudience,
+          category: doc.category,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+
+      console.log(`✅ Dokument "${doc.title}" gespeichert`);
+    } catch (error) {
+      console.error(`Fehler beim Speichern des Dokuments "${doc.title}":`, error);
+    }
+  }
+}
+
+export const userDocsGenerator = new UserDocsGenerator();
+```
+
+## Umgebungsvariablen für Dokumentation
+```bash
+# .env
+# ========================================
+# AUTOMATISCHE DOKUMENTATION
+# ========================================
+DOCS_ENABLED=true
+
+# Technische Dokumentation
+DEV_DOCS_ENABLED=true
+DEV_DOCS_PASSWORD=xyz
+DEV_DOCS_PATH=/docs/dev
+DOCUSAURUS_ENABLED=true
+
+# Benutzerdokumentation
+USER_DOCS_ENABLED=true
+USER_DOCS_PATH=/docs/user
+USER_DOCS_AI_GENERATION=true
+USER_DOCS_AUTO_UPDATE=true
+
+# API-Dokumentation
+API_DOCS_ENABLED=true
+API_DOCS_PATH=/api/docs
+API_DOCS_PUBLIC=false
+SWAGGER_UI_ENABLED=true
+
+# OpenAI für KI-generierte Docs
+OPENAI_API_KEY=sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+OPENAI_BASE_URL=https://custom-api.example.com/v1
+OPENAI_MODEL=gpt-4o
+OPENAI_DOCS_GENERATION=true
+
+# Dokumentations-Features
+DOCS_CACHE_ENABLED=true
+DOCS_CACHE_DURATION=3600
+DOCS_VERSIONING_ENABLED=true
+DOCS_AUTO_DEPLOY=true
+DOCS_SEARCH_ENABLED=true
+DOCS_FEEDBACK_ENABLED=true
+
+# Zugriffskontrolle
+DOCS_AUTH_REQUIRED=true
+DOCS_ROLE_BASED_ACCESS=true
+DOCS_AUDIT_LOGGING=true
+```
+description:
+globs:
+alwaysApply: true
+---

@@ -1,0 +1,714 @@
+# Authentifizierungs-Umgebungskonfiguration
+
+## Umgebungsvariablen-Überblick
+- **Flexibilität**: Steuerung von Auth-Methoden über .env
+- **Sicherheit**: Secrets und Konfiguration getrennt
+- **Umgebungsspezifisch**: Dev/Staging/Production
+- **Docker-Integration**: Container-spezifische Konfiguration
+- **CI/CD**: Automatisierte Deployment-Konfiguration
+
+## Basis .env-Konfiguration
+```bash
+# .env.example
+# ========================================
+# AZUBI LXP - AUTHENTIFIZIERUNG
+# ========================================
+
+# ========================================
+# APP-KONFIGURATION
+# ========================================
+APP_URL=http://localhost:3000
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your-super-secret-key-here-min-32-chars
+NODE_ENV=development
+PORT=3000
+
+# ========================================
+# AUTHENTIFIZIERUNGS-METHODEN
+# ========================================
+# Basis-Authentifizierung (E-Mail/Passwort)
+AUTH_BASIC_ENABLED=true
+AUTH_ENTRA_ENABLED=true
+
+# E-Mail-Verifizierung
+EMAIL_VERIFICATION_REQUIRED=false
+EMAIL_VERIFICATION_EXPIRES=24h
+
+# Passwort-Richtlinien
+PASSWORD_MIN_LENGTH=8
+PASSWORD_REQUIRE_UPPERCASE=true
+PASSWORD_REQUIRE_LOWERCASE=true
+PASSWORD_REQUIRE_NUMBERS=true
+PASSWORD_REQUIRE_SPECIAL_CHARS=false
+
+# ========================================
+# MICROSOFT ENTRA ID (AZURE AD)
+# ========================================
+ENTRA_CLIENT_ID=your-entra-client-id
+ENTRA_CLIENT_SECRET=your-entra-client-secret
+ENTRA_TENANT_ID=your-tenant-id
+ENTRA_REDIRECT_URI=http://localhost:3000/api/auth/callback/azure-ad
+
+# Entra ID Gruppen für Rollenzuweisung
+ENTRA_ADMIN_GROUP_ID=admin-group-guid
+ENTRA_TRAINER_GROUP_ID=trainer-group-guid
+ENTRA_AZUBI_GROUP_ID=azubi-group-guid
+
+# ========================================
+# DATENBANK
+# ========================================
+DATABASE_URL=postgresql://azubi:password@localhost:5432/azubi_dev
+POSTGRES_USER=azubi
+POSTGRES_PASSWORD=password
+POSTGRES_DB=azubi_dev
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+
+# ========================================
+# REDIS (OPTIONAL)
+# ========================================
+REDIS_URL=redis://localhost:6379
+REDIS_PASSWORD=
+REDIS_DB=0
+
+# ========================================
+# E-MAIL-SERVICE
+# ========================================
+# Resend (empfohlen für Production)
+RESEND_API_KEY=re_xxxxxxxxxxxx
+RESEND_FROM_EMAIL=noreply@azubi-lxp.com
+
+# Oder SMTP
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=noreply@azubi-lxp.com
+
+# ========================================
+# OPENAI INTEGRATION
+# ========================================
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o
+OPENAI_MAX_TOKENS=1000
+
+# ========================================
+# SICHERHEIT
+# ========================================
+# JWT-Konfiguration
+JWT_SECRET=your-jwt-secret-key
+JWT_EXPIRES_IN=24h
+JWT_REFRESH_EXPIRES_IN=7d
+
+# Rate Limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+LOGIN_RATE_LIMIT_MAX_REQUESTS=5
+LOGIN_RATE_LIMIT_WINDOW_MS=900000
+
+# CSRF-Schutz
+CSRF_SECRET=your-csrf-secret
+CSRF_EXPIRES_IN=1h
+
+# ========================================
+# LOGGING & MONITORING
+# ========================================
+LOG_LEVEL=info
+ENABLE_AUDIT_LOGS=true
+ENABLE_ACCESS_LOGS=true
+SENTRY_DSN=your-sentry-dsn
+
+# ========================================
+# FEATURE FLAGS
+# ========================================
+ENABLE_REGISTRATION=true
+ENABLE_PASSWORD_RESET=true
+ENABLE_EMAIL_VERIFICATION=true
+ENABLE_SOCIAL_LOGIN=true
+ENABLE_2FA=false
+ENABLE_SSO=false
+
+# ========================================
+# INTERNATIONALISIERUNG
+# ========================================
+DEFAULT_LOCALE=de
+SUPPORTED_LOCALES=de,en
+FALLBACK_LOCALE=de
+
+# ========================================
+# EXTERNE SERVICES
+# ========================================
+# Google Analytics
+NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX
+
+# Hotjar
+NEXT_PUBLIC_HOTJAR_ID=1234567
+
+# ========================================
+# DOCKER & DEPLOYMENT
+# ========================================
+DOCKER_ENV=development
+COMPOSE_PROJECT_NAME=azubi-lxp
+```
+
+## Development-Umgebung
+```bash
+# .env.development
+# ========================================
+# ENTWICKLUNGS-UMWELT
+# ========================================
+
+# App
+APP_URL=http://localhost:3000
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=dev-secret-key-32-chars-minimum-required
+NODE_ENV=development
+PORT=3000
+
+# Authentifizierung
+AUTH_BASIC_ENABLED=true
+AUTH_ENTRA_ENABLED=false
+EMAIL_VERIFICATION_REQUIRED=false
+
+# Datenbank
+DATABASE_URL=postgresql://azubi:password@localhost:5432/azubi_dev
+POSTGRES_USER=azubi
+POSTGRES_PASSWORD=password
+POSTGRES_DB=azubi_dev
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# E-Mail (Development - Console Output)
+RESEND_API_KEY=dev-key
+SMTP_FROM=dev@azubi-lxp.local
+
+# OpenAI (Development)
+OPENAI_API_KEY=sk-dev-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o
+
+# Sicherheit (Development)
+JWT_SECRET=dev-jwt-secret
+CSRF_SECRET=dev-csrf-secret
+
+# Logging
+LOG_LEVEL=debug
+ENABLE_AUDIT_LOGS=true
+
+# Features
+ENABLE_REGISTRATION=true
+ENABLE_PASSWORD_RESET=true
+ENABLE_EMAIL_VERIFICATION=false
+```
+
+## Staging-Umgebung
+```bash
+# .env.staging
+# ========================================
+# STAGING-UMWELT
+# ========================================
+
+# App
+APP_URL=https://staging.azubi-lxp.com
+NEXTAUTH_URL=https://staging.azubi-lxp.com
+NEXTAUTH_SECRET=staging-secret-key-32-chars-minimum-required
+NODE_ENV=staging
+PORT=3000
+
+# Authentifizierung
+AUTH_BASIC_ENABLED=true
+AUTH_ENTRA_ENABLED=true
+EMAIL_VERIFICATION_REQUIRED=true
+
+# Datenbank
+DATABASE_URL=postgresql://azubi_staging:staging_password@staging-db:5432/azubi_staging
+POSTGRES_USER=azubi_staging
+POSTGRES_PASSWORD=staging_password
+POSTGRES_DB=azubi_staging
+
+# Redis
+REDIS_URL=redis://staging-redis:6379
+REDIS_PASSWORD=staging_redis_password
+
+# E-Mail
+RESEND_API_KEY=re_staging_key
+SMTP_FROM=noreply@staging.azubi-lxp.com
+
+# OpenAI
+OPENAI_API_KEY=sk-staging-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o
+
+# Sicherheit
+JWT_SECRET=staging-jwt-secret
+CSRF_SECRET=staging-csrf-secret
+
+# Logging
+LOG_LEVEL=info
+ENABLE_AUDIT_LOGS=true
+
+# Features
+ENABLE_REGISTRATION=true
+ENABLE_PASSWORD_RESET=true
+ENABLE_EMAIL_VERIFICATION=true
+```
+
+## Production-Umgebung
+```bash
+# .env.production
+# ========================================
+# PRODUKTIONS-UMWELT
+# ========================================
+
+# App
+APP_URL=https://azubi-lxp.com
+NEXTAUTH_URL=https://azubi-lxp.com
+NEXTAUTH_SECRET=production-super-secret-key-32-chars-minimum
+NODE_ENV=production
+PORT=3000
+
+# Authentifizierung
+AUTH_BASIC_ENABLED=false
+AUTH_ENTRA_ENABLED=true
+EMAIL_VERIFICATION_REQUIRED=true
+
+# Datenbank
+DATABASE_URL=postgresql://azubi_prod:production_password@prod-db:5432/azubi_production
+POSTGRES_USER=azubi_prod
+POSTGRES_PASSWORD=production_password
+POSTGRES_DB=azubi_production
+
+# Redis
+REDIS_URL=redis://prod-redis:6379
+REDIS_PASSWORD=production_redis_password
+
+# E-Mail
+RESEND_API_KEY=re_production_key
+SMTP_FROM=noreply@azubi-lxp.com
+
+# OpenAI
+OPENAI_API_KEY=sk-production-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o
+
+# Sicherheit
+JWT_SECRET=production-jwt-secret
+CSRF_SECRET=production-csrf-secret
+
+# Logging
+LOG_LEVEL=warn
+ENABLE_AUDIT_LOGS=true
+
+# Features
+ENABLE_REGISTRATION=false
+ENABLE_PASSWORD_RESET=false
+ENABLE_EMAIL_VERIFICATION=true
+```
+
+## Docker-Umgebungen
+```bash
+# docker/.env.development
+# ========================================
+# DOCKER ENTWICKLUNGS-UMWELT
+# ========================================
+
+# Docker Compose
+COMPOSE_PROJECT_NAME=azubi-lxp-dev
+DOCKER_ENV=development
+
+# App
+APP_URL=http://localhost:3000
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=dev-docker-secret-key-32-chars
+NODE_ENV=development
+
+# Authentifizierung
+AUTH_BASIC_ENABLED=true
+AUTH_ENTRA_ENABLED=false
+
+# Datenbank
+POSTGRES_USER=azubi
+POSTGRES_PASSWORD=password
+POSTGRES_DB=azubi_dev
+DATABASE_URL=postgresql://azubi:password@postgres:5432/azubi_dev
+
+# Redis
+REDIS_URL=redis://redis:6379
+
+# E-Mail
+RESEND_API_KEY=dev-key
+SMTP_FROM=dev@azubi-lxp.local
+
+# OpenAI
+OPENAI_API_KEY=sk-dev-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o
+```
+
+```bash
+# docker/.env.production
+# ========================================
+# DOCKER PRODUKTIONS-UMWELT
+# ========================================
+
+# Docker Compose
+COMPOSE_PROJECT_NAME=azubi-lxp-prod
+DOCKER_ENV=production
+
+# App
+APP_URL=https://azubi-lxp.com
+NEXTAUTH_URL=https://azubi-lxp.com
+NEXTAUTH_SECRET=prod-docker-secret-key-32-chars
+NODE_ENV=production
+
+# Authentifizierung
+AUTH_BASIC_ENABLED=false
+AUTH_ENTRA_ENABLED=true
+
+# Datenbank
+POSTGRES_USER=azubi_prod
+POSTGRES_PASSWORD=production_password
+POSTGRES_DB=azubi_production
+DATABASE_URL=postgresql://azubi_prod:production_password@postgres:5432/azubi_production
+
+# Redis
+REDIS_URL=redis://redis:6379
+REDIS_PASSWORD=production_redis_password
+
+# E-Mail
+RESEND_API_KEY=re_production_key
+SMTP_FROM=noreply@azubi-lxp.com
+
+# OpenAI
+OPENAI_API_KEY=sk-production-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o
+```
+
+## Konfigurations-Validierung
+```typescript
+// config/auth.ts
+import { z } from 'zod';
+
+// Schema für Umgebungsvariablen
+const envSchema = z.object({
+  // App
+  APP_URL: z.string().url(),
+  NEXTAUTH_URL: z.string().url(),
+  NEXTAUTH_SECRET: z.string().min(32),
+  NODE_ENV: z.enum(['development', 'staging', 'production']),
+  PORT: z.string().transform(Number),
+
+  // Authentifizierung
+  AUTH_BASIC_ENABLED: z.string().transform(val => val === 'true'),
+  AUTH_ENTRA_ENABLED: z.string().transform(val => val === 'true'),
+  EMAIL_VERIFICATION_REQUIRED: z.string().transform(val => val === 'true'),
+
+  // Entra ID
+  ENTRA_CLIENT_ID: z.string().optional(),
+  ENTRA_CLIENT_SECRET: z.string().optional(),
+  ENTRA_TENANT_ID: z.string().optional(),
+
+  // Datenbank
+  DATABASE_URL: z.string().url(),
+  POSTGRES_USER: z.string(),
+  POSTGRES_PASSWORD: z.string(),
+  POSTGRES_DB: z.string(),
+
+  // Redis
+  REDIS_URL: z.string().optional(),
+  REDIS_PASSWORD: z.string().optional(),
+
+  // E-Mail
+  RESEND_API_KEY: z.string().optional(),
+  SMTP_FROM: z.string().email().optional(),
+
+  // OpenAI
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_BASE_URL: z.string().url().optional(),
+  OPENAI_MODEL: z.string().optional(),
+
+  // Sicherheit
+  JWT_SECRET: z.string().min(32),
+  CSRF_SECRET: z.string().min(32),
+});
+
+// Validierung der Umgebungsvariablen
+export function validateEnv() {
+  try {
+    const env = envSchema.parse(process.env);
+    
+    // Zusätzliche Validierungen
+    if (env.AUTH_ENTRA_ENABLED) {
+      if (!env.ENTRA_CLIENT_ID || !env.ENTRA_CLIENT_SECRET || !env.ENTRA_TENANT_ID) {
+        throw new Error('Entra ID ist aktiviert, aber nicht vollständig konfiguriert');
+      }
+    }
+
+    if (env.EMAIL_VERIFICATION_REQUIRED) {
+      if (!env.RESEND_API_KEY && !env.SMTP_FROM) {
+        throw new Error('E-Mail-Verifizierung ist aktiviert, aber kein E-Mail-Service konfiguriert');
+      }
+    }
+
+    return env;
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error('Umgebungsvariablen-Validierungsfehler:');
+      error.errors.forEach(err => {
+        console.error(`- ${err.path.join('.')}: ${err.message}`);
+      });
+    } else {
+      console.error('Umgebungsvariablen-Fehler:', error);
+    }
+    
+    process.exit(1);
+  }
+}
+
+// Validierte Umgebungsvariablen exportieren
+export const env = validateEnv();
+
+// Konfigurations-Objekte
+export const authConfig = {
+  basic: {
+    enabled: env.AUTH_BASIC_ENABLED,
+    passwordMinLength: 8,
+    requireUppercase: true,
+    requireLowercase: true,
+    requireNumbers: true,
+    requireSpecialChars: false,
+  },
+  
+  entra: {
+    enabled: env.AUTH_ENTRA_ENABLED,
+    clientId: env.ENTRA_CLIENT_ID,
+    clientSecret: env.ENTRA_CLIENT_SECRET,
+    tenantId: env.ENTRA_TENANT_ID,
+    redirectUri: `${env.APP_URL}/api/auth/callback/azure-ad`,
+  },
+  
+  email: {
+    verificationRequired: env.EMAIL_VERIFICATION_REQUIRED,
+    from: env.SMTP_FROM || env.RESEND_API_KEY ? 'noreply@azubi-lxp.com' : undefined,
+    resendApiKey: env.RESEND_API_KEY,
+  },
+  
+  security: {
+    jwtSecret: env.JWT_SECRET,
+    csrfSecret: env.CSRF_SECRET,
+    jwtExpiresIn: '24h',
+    refreshExpiresIn: '7d',
+  },
+  
+  database: {
+    url: env.DATABASE_URL,
+    user: env.POSTGRES_USER,
+    password: env.POSTGRES_PASSWORD,
+    database: env.POSTGRES_DB,
+  },
+  
+  redis: {
+    url: env.REDIS_URL,
+    password: env.REDIS_PASSWORD,
+  },
+  
+  openai: {
+    apiKey: env.OPENAI_API_KEY,
+    baseUrl: env.OPENAI_BASE_URL,
+    model: env.OPENAI_MODEL || 'gpt-4o',
+  },
+};
+
+// Feature-Flags
+export const featureFlags = {
+  registration: env.AUTH_BASIC_ENABLED,
+  passwordReset: env.AUTH_BASIC_ENABLED,
+  emailVerification: env.EMAIL_VERIFICATION_REQUIRED,
+  socialLogin: env.AUTH_ENTRA_ENABLED,
+  twoFactorAuth: false, // Für zukünftige Implementierung
+  sso: env.AUTH_ENTRA_ENABLED,
+};
+```
+
+## Docker Compose Environment
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.development
+    environment:
+      # Docker-spezifische Overrides
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_URL: ${APP_URL}
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - azubi-network
+
+  postgres:
+    image: postgres:15-alpine
+    env_file:
+      - .env.development
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - azubi-network
+
+  redis:
+    image: redis:7-alpine
+    env_file:
+      - .env.development
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - azubi-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  azubi-network:
+    driver: bridge
+```
+
+## CI/CD Environment Variables
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+          working-directory: ./
+        env:
+          # Production Environment Variables
+          NEXTAUTH_URL: https://azubi-lxp.com
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          AUTH_BASIC_ENABLED: false
+          AUTH_ENTRA_ENABLED: true
+          ENTRA_CLIENT_ID: ${{ secrets.ENTRA_CLIENT_ID }}
+          ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
+          ENTRA_TENANT_ID: ${{ secrets.ENTRA_TENANT_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          CSRF_SECRET: ${{ secrets.CSRF_SECRET }}
+```
+
+## Environment-Spezifische Konfiguration
+```typescript
+// lib/config/environment.ts
+export const getEnvironmentConfig = () => {
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  
+  const configs = {
+    development: {
+      auth: {
+        basicEnabled: true,
+        entraEnabled: false,
+        emailVerification: false,
+      },
+      database: {
+        logging: true,
+        ssl: false,
+      },
+      security: {
+        rateLimit: false,
+        csrf: false,
+      },
+      logging: {
+        level: 'debug',
+        enableAudit: true,
+      },
+    },
+    
+    staging: {
+      auth: {
+        basicEnabled: true,
+        entraEnabled: true,
+        emailVerification: true,
+      },
+      database: {
+        logging: false,
+        ssl: true,
+      },
+      security: {
+        rateLimit: true,
+        csrf: true,
+      },
+      logging: {
+        level: 'info',
+        enableAudit: true,
+      },
+    },
+    
+    production: {
+      auth: {
+        basicEnabled: false,
+        entraEnabled: true,
+        emailVerification: true,
+      },
+      database: {
+        logging: false,
+        ssl: true,
+      },
+      security: {
+        rateLimit: true,
+        csrf: true,
+      },
+      logging: {
+        level: 'warn',
+        enableAudit: true,
+      },
+    },
+  };
+  
+  return configs[nodeEnv as keyof typeof configs] || configs.development;
+};
+```
+description:
+globs:
+alwaysApply: true
+---

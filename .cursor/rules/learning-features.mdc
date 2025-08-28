@@ -1,0 +1,62 @@
+# Lern-Features und Komponenten
+
+## Personalisiertes Dashboard
+- **KI-Empfehlungen**: Basierend auf Lernverhalten, Jobprofil und Interessen
+- **Fortschrittsanzeige**: Visuelle Darstellung des Lernfortschritts
+- **Offene Aufgaben**: Übersicht über zu erledigende Lernaktivitäten
+- **Lernstatistiken**: Wöchentliche und monatliche Zusammenfassungen
+
+## Interaktive Lernpfade
+- **Adaptive Quizze**: Schwierigkeitsgrad passt sich an Leistung an
+- **Virtuelle Simulationen**: Praxisnahe Szenarien für Handwerksberufe
+- **Fallstudien**: Interaktive Geschichten mit Entscheidungspunkten
+- **Multimedia-Integration**: Videos, Podcasts, AR-Elemente
+
+## Soziales Lernen
+- **Diskussionsforen**: Themenbasierte Threads für Q&A
+- **Projektgruppen**: Kollaborative Arbeit mit Chat und Dateifreigabe
+- **Peer-Feedback**: Bewertungssystem für eingereichte Arbeiten
+- **User-generated Content**: Tipps, Tutorials und Notizen von Azubis
+
+## Gamification
+- **Punkte-System**: Für abgeschlossene Module und Beiträge
+- **Badges und Achievements**: Spezielle Auszeichnungen für Leistungen
+- **Bestenlisten**: Anonymisierte Ranglisten pro Gruppe/Unternehmen
+- **Level-System**: Fortschrittsbalken und Freischaltung neuer Inhalte
+
+## Komponenten-Struktur
+```typescript
+// Lernmodul-Interface
+interface LearningModule {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  estimatedTime: number; // in Minuten
+  tags: string[];
+  prerequisites: string[]; // IDs der vorherigen Module
+  content: LearningContent[];
+  quiz?: Quiz;
+  progress: UserProgress;
+}
+
+// Benutzer-Fortschritt
+interface UserProgress {
+  moduleId: string;
+  completed: boolean;
+  score?: number;
+  timeSpent: number; // in Sekunden
+  lastAccessed: Date;
+  attempts: number;
+}
+```
+
+## Datenmodell
+- **Modul-Hierarchie**: Baumstruktur für Lernpfade
+- **Fortschritts-Tracking**: Detaillierte Aufzeichnung aller Lernaktivitäten
+- **Empfehlungs-Engine**: Machine Learning für personalisierte Vorschläge
+- **Analytics**: Umfassende Lernstatistiken für Ausbilder
+description:
+globs:
+alwaysApply: true
+---

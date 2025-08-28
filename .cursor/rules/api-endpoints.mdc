@@ -1,0 +1,487 @@
+# API-Endpoints und RESTful-Design
+
+## API-Struktur
+- **Versionierung**: Alle APIs unter `/api/v1/` strukturieren
+- **RESTful Design**: Konsistente HTTP-Methoden und Status-Codes
+- **Endpunkt-Namen**: Plural-Nomen für Ressourcen
+- **Nested Resources**: Hierarchische Struktur für verwandte Daten
+
+## API-Endpoints Übersicht
+
+### Authentifizierung
+```
+POST   /api/v1/auth/login          # User einloggen
+POST   /api/v1/auth/register       # Neuen User registrieren
+POST   /api/v1/auth/logout         # User ausloggen
+GET    /api/v1/auth/session        # Aktuelle Session abrufen
+POST   /api/v1/auth/refresh        # Token erneuern
+```
+
+### Für Azubis
+```
+GET    /api/v1/dashboard           # Personalisiertes Dashboard
+GET    /api/v1/learn/paths         # Verfügbare Lernpfade
+GET    /api/v1/learn/paths/{id}    # Spezifischen Lernpfad
+POST   /api/v1/learn/complete      # Modul als abgeschlossen markieren
+GET    /api/v1/recommendations     # KI-basierte Empfehlungen
+GET    /api/v1/progress            # Lernfortschritt abrufen
+```
+
+### Community-Features
+```
+GET    /api/v1/community/forums    # Forum-Threads abrufen
+POST   /api/v1/community/posts     # Neuen Post erstellen
+GET    /api/v1/community/posts     # Posts mit Pagination
+PUT    /api/v1/community/posts/{id} # Post bearbeiten
+DELETE /api/v1/community/posts/{id} # Post löschen
+POST   /api/v1/community/feedback  # Peer-Feedback geben
+```
+
+### Für Ausbilder/Admin
+```
+GET    /api/v1/admin/analytics     # Leistungsanalysen
+GET    /api/v1/admin/users         # Benutzer-Verwaltung
+POST   /api/v1/admin/cms/upload    # Inhalte hochladen
+PUT    /api/v1/admin/recommendations/tune # KI-Parameter anpassen
+GET    /api/v1/admin/hr/sync       # HR-Integration triggern
+```
+
+## API-Route Implementierungen
+
+### Authentifizierung
+```typescript
+// app/api/v1/auth/login/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
+import { authenticateUser } from '@/lib/auth';
+import { generateToken } from '@/lib/jwt';
+
+const loginSchema = z.object({
+  email: z.string().email('Ungültige E-Mail-Adresse'),
+  password: z.string().min(6, 'Passwort muss mindestens 6 Zeichen lang sein'),
+});
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { email, password } = loginSchema.parse(body);
+    
+    // Benutzer authentifizieren
+    const user = await authenticateUser(email, password);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Ungültige Anmeldedaten' },
+        { status: 401 }
+      );
+    }
+    
+    // JWT-Token generieren
+    const token = generateToken(user.id);
+    
+    // Session in Redis speichern
+    await redis.setex(`session:${token}`, 3600, JSON.stringify(user));
+    
+    return NextResponse.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          firstName: user.firstName,
+          lastName: user.lastName
+        },
+        token
+      }
+    });
+    
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Validierungsfehler', details: error.errors },
+        { status: 400 }
+      );
+    }
+    
+    console.error('Login error:', error);
+    return NextResponse.json(
+      { error: 'Interner Server-Fehler' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+### Dashboard API
+```typescript
+// app/api/v1/dashboard/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { authenticate } from '@/middleware/auth';
+import { LearningService } from '@/services/learning';
+import { CommunityService } from '@/services/community';
+
+export async function GET(request: NextRequest) {
+  try {
+    // Benutzer authentifizieren
+    const user = await authenticate(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Nicht authentifiziert' },
+        { status: 401 }
+      );
+    }
+    
+    // Parallele API-Aufrufe für bessere Performance
+    const [learningProgress, recommendations, communityActivity] = await Promise.all([
+      LearningService.getUserProgress(user.id),
+      LearningService.getRecommendations(user.id),
+      CommunityService.getRecentActivity(user.id)
+    ]);
+    
+    return NextResponse.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          points: user.points,
+          level: user.level,
+          streak: user.streak
+        },
+        learning: {
+          progress: learningProgress,
+          recommendations
+        },
+        community: communityActivity
+      }
+    });
+    
+  } catch (error) {
+    console.error('Dashboard error:', error);
+    return NextResponse.json(
+      { error: 'Fehler beim Laden des Dashboards' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+### Lernpfad-API
+```typescript
+// app/api/v1/learn/paths/[id]/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { authenticate } from '@/middleware/auth';
+import { LearningService } from '@/services/learning';
+import { z } from 'zod';
+
+const pathParamsSchema = z.object({
+  id: z.string().transform(Number)
+});
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await authenticate(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Nicht authentifiziert' },
+        { status: 401 }
+      );
+    }
+    
+    const { id } = pathParamsSchema.parse(params);
+    
+    const learningPath = await LearningService.getLearningPath(id, user.id);
+    if (!learningPath) {
+      return NextResponse.json(
+        { error: 'Lernpfad nicht gefunden' },
+        { status: 404 }
+      );
+    }
+    
+    return NextResponse.json({
+      success: true,
+      data: learningPath
+    });
+    
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Ungültige Parameter' },
+        { status: 400 }
+      );
+    }
+    
+    console.error('Learning path error:', error);
+    return NextResponse.json(
+      { error: 'Fehler beim Laden des Lernpfads' },
+      { status: 500 }
+    );
+  }
+}
+
+// Modul als abgeschlossen markieren
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await authenticate(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Nicht authentifiziert' },
+        { status: 401 }
+      );
+    }
+    
+    const { id } = pathParamsSchema.parse(params);
+    const body = await request.json();
+    
+    const completion = await LearningService.completeModule({
+      userId: user.id,
+      moduleId: id,
+      score: body.score,
+      timeSpent: body.timeSpent
+    });
+    
+    return NextResponse.json({
+      success: true,
+      data: completion
+    });
+    
+  } catch (error) {
+    console.error('Module completion error:', error);
+    return NextResponse.json(
+      { error: 'Fehler beim Abschließen des Moduls' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+### Community-API
+```typescript
+// app/api/v1/community/posts/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { authenticate } from '@/middleware/auth';
+import { CommunityService } from '@/services/community';
+import { z } from 'zod';
+
+const postSchema = z.object({
+  content: z.string().min(1, 'Post-Inhalt darf nicht leer sein').max(1000, 'Post zu lang'),
+  threadId: z.number().optional(),
+  parentId: z.number().optional()
+});
+
+const querySchema = z.object({
+  threadId: z.string().transform(Number).optional(),
+  page: z.string().transform(Number).default('1'),
+  limit: z.string().transform(Number).default('20')
+});
+
+export async function GET(request: NextRequest) {
+  try {
+    const user = await authenticate(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Nicht authentifiziert' },
+        { status: 401 }
+      );
+    }
+    
+    const { searchParams } = new URL(request.url);
+    const { threadId, page, limit } = querySchema.parse(Object.fromEntries(searchParams));
+    
+    const posts = await CommunityService.getPosts({
+      threadId,
+      page,
+      limit,
+      userId: user.id
+    });
+    
+    return NextResponse.json({
+      success: true,
+      data: posts.data,
+      meta: {
+        pagination: posts.pagination,
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('Get posts error:', error);
+    return NextResponse.json(
+      { error: 'Fehler beim Laden der Posts' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const user = await authenticate(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Nicht authentifiziert' },
+        { status: 401 }
+      );
+    }
+    
+    const body = await request.json();
+    const { content, threadId, parentId } = postSchema.parse(body);
+    
+    const post = await CommunityService.createPost({
+      content,
+      threadId,
+      parentId,
+      userId: user.id
+    });
+    
+    return NextResponse.json({
+      success: true,
+      data: post
+    }, { status: 201 });
+    
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Validierungsfehler', details: error.errors },
+        { status: 400 }
+      );
+    }
+    
+    console.error('Create post error:', error);
+    return NextResponse.json(
+      { error: 'Fehler beim Erstellen des Posts' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+### Admin-API
+```typescript
+// app/api/v1/admin/analytics/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { authenticate, requireRole } from '@/middleware/auth';
+import { AnalyticsService } from '@/services/analytics';
+
+export async function GET(request: NextRequest) {
+  try {
+    const user = await authenticate(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: 'Nicht authentifiziert' },
+        { status: 401 }
+      );
+    }
+    
+    // Nur Ausbilder und Admins haben Zugriff
+    if (!requireRole(user, ['AUSBILDER', 'ADMIN'])) {
+      return NextResponse.json(
+        { error: 'Keine Berechtigung' },
+        { status: 403 }
+      );
+    }
+    
+    const { searchParams } = new URL(request.url);
+    const period = searchParams.get('period') || 'week';
+    const groupId = searchParams.get('groupId');
+    
+    const analytics = await AnalyticsService.getAnalytics({
+      period,
+      groupId: groupId ? parseInt(groupId) : undefined,
+      userId: user.id
+    });
+    
+    return NextResponse.json({
+      success: true,
+      data: analytics
+    });
+    
+  } catch (error) {
+    console.error('Analytics error:', error);
+    return NextResponse.json(
+      { error: 'Fehler beim Laden der Analysen' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## API-Dokumentation
+```typescript
+// OpenAPI/Swagger Schema
+export const openApiSchema = {
+  openapi: '3.0.0',
+  info: {
+    title: 'Azubi LXP API',
+    version: '1.0.0',
+    description: 'API für die Learning Experience Platform'
+  },
+  servers: [
+    { url: 'https://api.azubi-lxp.com/v1', description: 'Production' },
+    { url: 'http://localhost:3000/api/v1', description: 'Development' }
+  ],
+  components: {
+    securitySchemes: {
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT'
+      }
+    }
+  },
+  paths: {
+    '/auth/login': {
+      post: {
+        summary: 'User einloggen',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  email: { type: 'string', format: 'email' },
+                  password: { type: 'string', minLength: 6 }
+                },
+                required: ['email', 'password']
+              }
+            }
+          }
+        },
+        responses: {
+          '200': {
+            description: 'Erfolgreich eingeloggt',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean' },
+                    data: {
+                      type: 'object',
+                      properties: {
+                        user: { $ref: '#/components/schemas/User' },
+                        token: { type: 'string' }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+```
+description:
+globs:
+alwaysApply: true
+---

@@ -1,0 +1,987 @@
+# Docker-basierte Microservices-Architektur
+
+## Übersicht
+
+Die LXP-Plattform basiert auf einer vollständig containerisierten Microservices-Architektur, die alle Komponenten in Docker-Containern ausführt. Diese Architektur gewährleistet Skalierbarkeit, Portabilität und einfaches Deployment, während sie alle bestehenden Konzepte integriert: ARP-Verarbeitung, MinIO-Speicher, automatische Dokumentation, Sicherheit und Benutzerdokumentation.
+
+## Ziele
+
+- **Vollständige Containerisierung**: Alle Komponenten laufen in Docker-Containern
+- **Skalierbarkeit**: Unabhängige Skalierung von Diensten
+- **Portabilität**: Einheitliches Deployment auf lokalen Servern oder in der Cloud
+- **Sicherheit**: DSGVO-Konformität, TLS, Zugriffskontrolle, isolierte Netzwerke
+- **Automatisierung**: Integration der ARP-Verarbeitung und Dokumentation
+- **Konfigurierbarkeit**: Zentrale .env-Datei für alle Dienste
+- **Wartbarkeit**: Logging, Monitoring und einfache Updates via Docker
+
+## Architektur-Überblick
+
+### Microservices und Komponenten
+
+#### API-Gateway
+- **Zweck**: Zentraler Einstiegspunkt für Client-Anfragen
+- **Funktionen**: Routing, JWT-Validierung, Rate Limiting
+- **Technik**: Express.js, Docker-Container
+
+#### Auth-Service
+- **Zweck**: Authentifizierung (Basis-Auth, Entra ID), Session-Management
+- **Technik**: Auth.js, Redis
+- **Container**: Eigenständiger Service mit Redis-Dependency
+
+#### User-Service
+- **Zweck**: Verwaltung von Benutzerdaten (Profile, Rollen: AZUBI, AUSBILDER, ADMIN)
+- **Technik**: Prisma, PostgreSQL
+- **Container**: Mit PostgreSQL-Dependency
+
+#### Course-Service
+- **Zweck**: Automatische Verarbeitung von ARPs, Kursgenerierung
+- **Technik**: pdf-parse, OpenAI, MinIO
+- **Container**: Mit MinIO und OpenAI-Integration
+
+#### Recommendation-Service
+- **Zweck**: KI-basierte Lernempfehlungen
+- **Technik**: OpenAI, Redis
+- **Container**: Mit Redis-Cache
+
+#### Community-Service
+- **Zweck**: Foren, Gruppen, Real-Time-Interaktionen
+- **Technik**: Socket.io, Prisma
+- **Container**: Mit PostgreSQL und Redis
+
+#### Analytics-Service
+- **Zweck**: Leistungsberichte, Visualisierungen
+- **Technik**: PostgreSQL, Chart.js
+- **Container**: Mit PostgreSQL-Dependency
+
+#### CMS-Service
+- **Zweck**: Verwaltung von Inhalten (Videos, Quizze, etc.)
+- **Technik**: MinIO, Prisma
+- **Container**: Mit MinIO-Integration
+
+#### Notification-Service
+- **Zweck**: E-Mail-Benachrichtigungen
+- **Technik**: Resend, BullMQ
+- **Container**: Mit Redis-Queue
+
+#### Frontend
+- **Zweck**: Next.js-Client für Benutzer (Dashboard, Admin Center)
+- **Technik**: shadcn/ui, Next.js
+- **Container**: Statischer Build mit Nginx
+
+## Docker Compose Konfiguration
+
+### Vollständige docker-compose.yml
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: lxp-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - lxp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: lxp-auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - MICROSOFT_ENTRA_ID_CLIENT_ID=${MICROSOFT_ENTRA_ID_CLIENT_ID}
+      - MICROSOFT_ENTRA_ID_CLIENT_SECRET=${MICROSOFT_ENTRA_ID_CLIENT_SECRET}
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # User Service
+  user-service:
+    build:
+      context: ./services/user-service
+      dockerfile: Dockerfile
+    container_name: lxp-user-service
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # Course Service
+  course-service:
+    build:
+      context: ./services/course-service
+      dockerfile: Dockerfile
+    container_name: lxp-course-service
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # Recommendation Service
+  recommendation-service:
+    build:
+      context: ./services/recommendation-service
+      dockerfile: Dockerfile
+    container_name: lxp-recommendation-service
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # Community Service
+  community-service:
+    build:
+      context: ./services/community-service
+      dockerfile: Dockerfile
+    container_name: lxp-community-service
+    ports:
+      - "3005:3005"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # Analytics Service
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    container_name: lxp-analytics-service
+    ports:
+      - "3006:3006"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # CMS Service
+  cms-service:
+    build:
+      context: ./services/cms-service
+      dockerfile: Dockerfile
+    container_name: lxp-cms-service
+    ports:
+      - "3007:3007"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+    depends_on:
+      - postgres
+      - minio
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    container_name: lxp-notification-service
+    ports:
+      - "3008:3008"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - REDIS_URL=redis://redis:6379
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+    depends_on:
+      - redis
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: lxp-frontend
+    ports:
+      - "80:80"
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+    depends_on:
+      - api-gateway
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: lxp-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - lxp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: lxp-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - lxp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MinIO Storage
+  minio:
+    image: minio/minio:latest
+    container_name: lxp-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+      - MINIO_BROWSER_REDIRECT_URL=http://localhost:9001
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+      - ./minio/config:/root/.minio
+    networks:
+      - lxp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MinIO Initialization
+  minio-init:
+    image: minio/mc:latest
+    container_name: lxp-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+    command: >
+      sh -c "
+        sleep 10 &&
+        mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} &&
+        mc mb local/lxp-arp &&
+        mc mb local/lxp-content &&
+        mc policy set public local/lxp-content &&
+        mc policy set private local/lxp-arp &&
+        echo 'MinIO-Buckets erfolgreich erstellt'
+      "
+    networks:
+      - lxp-network
+    restart: "no"
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: lxp-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - frontend
+      - api-gateway
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: lxp-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: lxp-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+  # Jaeger Tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: lxp-jaeger
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - lxp-network
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  minio-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+
+networks:
+  lxp-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+```
+
+## Service-spezifische Dockerfiles
+
+### API Gateway Dockerfile
+```dockerfile
+# services/api-gateway/Dockerfile
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+
+FROM node:18-alpine AS runtime
+
+WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY . .
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
+```
+
+### Course Service Dockerfile
+```dockerfile
+# services/course-service/Dockerfile
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+FROM node:18-alpine AS runtime
+
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY package*.json ./
+
+# Install system dependencies for PDF processing
+RUN apk add --no-cache \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-data-deu
+
+EXPOSE 3003
+
+CMD ["npm", "start"]
+```
+
+### Frontend Dockerfile
+```dockerfile
+# frontend/Dockerfile
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine AS runtime
+
+COPY --from=builder /app/out /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+## Service-Kommunikation
+
+### Inter-Service Communication
+```typescript
+// lib/services/service-client.ts
+export class ServiceClient {
+  private baseUrls: Record<string, string>;
+
+  constructor() {
+    this.baseUrls = {
+      auth: process.env.AUTH_SERVICE_URL || 'http://auth-service:3001',
+      user: process.env.USER_SERVICE_URL || 'http://user-service:3002',
+      course: process.env.COURSE_SERVICE_URL || 'http://course-service:3003',
+      recommendation: process.env.RECOMMENDATION_SERVICE_URL || 'http://recommendation-service:3004',
+      community: process.env.COMMUNITY_SERVICE_URL || 'http://community-service:3005',
+      analytics: process.env.ANALYTICS_SERVICE_URL || 'http://analytics-service:3006',
+      cms: process.env.CMS_SERVICE_URL || 'http://cms-service:3007',
+      notification: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3008',
+    };
+  }
+
+  async callService<T>(
+    serviceName: string,
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const baseUrl = this.baseUrls[serviceName];
+    if (!baseUrl) {
+      throw new Error(`Unbekannter Service: ${serviceName}`);
+    }
+
+    const url = `${baseUrl}${endpoint}`;
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Service ${serviceName} Fehler: ${response.statusText}`);
+    }
+
+    return response.json();
+  }
+
+  // Service-spezifische Methoden
+  async callAuthService<T>(endpoint: string, options?: RequestInit): Promise<T> {
+    return this.callService<T>('auth', endpoint, options);
+  }
+
+  async callUserService<T>(endpoint: string, options?: RequestInit): Promise<T> {
+    return this.callService<T>('user', endpoint, options);
+  }
+
+  async callCourseService<T>(endpoint: string, options?: RequestInit): Promise<T> {
+    return this.callService<T>('course', endpoint, options);
+  }
+}
+
+export const serviceClient = new ServiceClient();
+```
+
+## Health Checks und Monitoring
+
+### Service Health Monitoring
+```typescript
+// lib/health/service-health.ts
+import { serviceClient } from '@/lib/services/service-client';
+
+interface ServiceHealth {
+  service: string;
+  status: 'healthy' | 'unhealthy';
+  responseTime: number;
+  lastCheck: string;
+  error?: string;
+}
+
+export class ServiceHealthMonitor {
+  private services = [
+    'auth', 'user', 'course', 'recommendation',
+    'community', 'analytics', 'cms', 'notification'
+  ];
+
+  async checkAllServices(): Promise<ServiceHealth[]> {
+    const healthChecks = await Promise.allSettled(
+      this.services.map(service => this.checkService(service))
+    );
+
+    return healthChecks.map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return result.value;
+      } else {
+        return {
+          service: this.services[index],
+          status: 'unhealthy' as const,
+          responseTime: 0,
+          lastCheck: new Date().toISOString(),
+          error: result.reason.message,
+        };
+      }
+    });
+  }
+
+  private async checkService(serviceName: string): Promise<ServiceHealth> {
+    const startTime = Date.now();
+    
+    try {
+      await serviceClient.callService(serviceName, '/health');
+      
+      return {
+        service: serviceName,
+        status: 'healthy',
+        responseTime: Date.now() - startTime,
+        lastCheck: new Date().toISOString(),
+      };
+    } catch (error) {
+      return {
+        service: serviceName,
+        status: 'unhealthy',
+        responseTime: Date.now() - startTime,
+        lastCheck: new Date().toISOString(),
+        error: error.message,
+      };
+    }
+  }
+}
+
+export const serviceHealthMonitor = new ServiceHealthMonitor();
+```
+
+## Deployment und Skalierung
+
+### Docker Compose für Produktion
+```yaml
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  # Skalierbare Services
+  course-service:
+    build:
+      context: ./services/course-service
+      dockerfile: Dockerfile.prod
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  recommendation-service:
+    build:
+      context: ./services/recommendation-service
+      dockerfile: Dockerfile.prod
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # Load Balancer
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - course-service
+      - recommendation-service
+    networks:
+      - lxp-network
+```
+
+### Kubernetes Deployment (Optional)
+```yaml
+# k8s/course-service-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: course-service
+  namespace: lxp
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: course-service
+  template:
+    metadata:
+      labels:
+        app: course-service
+    spec:
+      containers:
+      - name: course-service
+        image: lxp/course-service:latest
+        ports:
+        - containerPort: 3003
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: lxp-secrets
+              key: database-url
+        resources:
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3003
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3003
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: course-service
+  namespace: lxp
+spec:
+  selector:
+    app: course-service
+  ports:
+  - port: 3003
+    targetPort: 3003
+  type: ClusterIP
+```
+
+## Umgebungsvariablen
+
+### Zentrale .env-Datei
+```bash
+# .env
+# ========================================
+# DOCKER MICROSERVICES ARCHITEKTUR
+# ========================================
+NODE_ENV=production
+
+# Service URLs (interne Docker-Netzwerk-URLs)
+AUTH_SERVICE_URL=http://auth-service:3001
+USER_SERVICE_URL=http://user-service:3002
+COURSE_SERVICE_URL=http://course-service:3003
+RECOMMENDATION_SERVICE_URL=http://recommendation-service:3004
+COMMUNITY_SERVICE_URL=http://community-service:3005
+ANALYTICS_SERVICE_URL=http://analytics-service:3006
+CMS_SERVICE_URL=http://cms-service:3007
+NOTIFICATION_SERVICE_URL=http://notification-service:3008
+
+# Datenbank
+POSTGRES_USER=lxp_user
+POSTGRES_PASSWORD=lxp_secure_password
+POSTGRES_DB=lxp_db
+DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+# Redis
+REDIS_PASSWORD=lxp_redis_password
+REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
+
+# MinIO
+MINIO_ACCESS_KEY=lxp_minio_user
+MINIO_SECRET_KEY=lxp_minio_secure_password
+MINIO_ENDPOINT=minio
+MINIO_PORT=9000
+
+# OpenAI
+OPENAI_API_KEY=sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+OPENAI_BASE_URL=https://custom-api.example.com/v1
+
+# Microsoft Entra ID
+MICROSOFT_ENTRA_ID_CLIENT_ID=your-client-id
+MICROSOFT_ENTRA_ID_CLIENT_SECRET=your-client-secret
+
+# JWT
+JWT_SECRET=your-super-secure-jwt-secret
+
+# E-Mail
+RESEND_API_KEY=re_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+
+# Frontend
+NEXT_PUBLIC_API_URL=http://localhost:3000
+
+# Monitoring
+GRAFANA_ADMIN_PASSWORD=grafana_admin_password
+
+# Skalierung
+COURSE_SERVICE_REPLICAS=3
+RECOMMENDATION_SERVICE_REPLICAS=2
+MAX_CONCURRENT_REQUESTS=100
+RATE_LIMIT_PER_MINUTE=1000
+```
+
+## Sicherheitsrichtlinien
+
+### Container-Sicherheit
+- **Non-root User**: Alle Services laufen als nicht-root Benutzer
+- **Read-only Filesystem**: Container haben read-only Root-Filesystem
+- **Resource Limits**: CPU und Memory-Limits für alle Services
+- **Network Isolation**: Services kommunizieren nur über definierte Ports
+- **Secrets Management**: Sensible Daten über Docker Secrets oder .env
+
+### Netzwerk-Sicherheit
+- **Internal Network**: Alle Services laufen im isolierten Docker-Netzwerk
+- **Port Exposure**: Nur notwendige Ports werden nach außen exponiert
+- **TLS/SSL**: Verschlüsselte Verbindungen für alle externen Kommunikationen
+- **Firewall**: Port-basierte Zugriffskontrolle
+
+## Monitoring und Logging
+
+### Prometheus Konfiguration
+```yaml
+# monitoring/prometheus.yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+  - job_name: 'lxp-api-gateway'
+    static_configs:
+      - targets: ['api-gateway:3000']
+    metrics_path: '/metrics'
+
+  - job_name: 'lxp-course-service'
+    static_configs:
+      - targets: ['course-service:3003']
+    metrics_path: '/metrics'
+
+  - job_name: 'lxp-postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    metrics_path: '/metrics'
+
+  - job_name: 'lxp-redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: '/metrics'
+```
+
+### Grafana Dashboard
+```json
+// monitoring/grafana/dashboards/lxp-overview.json
+{
+  "dashboard": {
+    "title": "LXP Platform Overview",
+    "panels": [
+      {
+        "title": "Service Health",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up",
+            "legendFormat": "{{job}}"
+          }
+        ]
+      },
+      {
+        "title": "API Response Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "http_request_duration_seconds",
+            "legendFormat": "{{job}} - {{method}} {{route}}"
+          }
+        ]
+      },
+      {
+        "title": "Database Connections",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "pg_stat_database_numbackends",
+            "legendFormat": "{{datname}}"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## Backup und Recovery
+
+### Backup-Strategie
+```bash
+#!/bin/bash
+# scripts/backup.sh
+
+# PostgreSQL Backup
+docker exec lxp-postgres pg_dump -U $POSTGRES_USER $POSTGRES_DB > backup/postgres_$(date +%Y%m%d_%H%M%S).sql
+
+# MinIO Backup
+docker exec lxp-minio mc mirror local/lxp-arp backup/minio/arp
+docker exec lxp-minio mc mirror local/lxp-content backup/minio/content
+
+# Redis Backup
+docker exec lxp-redis redis-cli --rdb /data/dump.rdb
+docker cp lxp-redis:/data/dump.rdb backup/redis_$(date +%Y%m%d_%H%M%S).rdb
+
+# Konfigurations-Backup
+cp .env backup/env_$(date +%Y%m%d_%H%M%S).bak
+cp docker-compose.yml backup/docker-compose_$(date +%Y%m%d_%H%M%S).yml
+```
+
+## Nächste Schritte
+
+1. **Docker Compose Setup**: Vollständige Konfiguration implementieren
+2. **Service-Container**: Alle Microservices in Docker containerisieren
+3. **Netzwerk-Konfiguration**: Inter-Service-Kommunikation einrichten
+4. **Monitoring**: Prometheus und Grafana integrieren
+5. **Skalierung**: Service-Replikation und Load Balancing
+6. **Backup-Strategie**: Automatisierte Backups implementieren
+7. **CI/CD-Pipeline**: Docker-basierte Deployment-Pipeline
+8. **Kubernetes-Migration**: Optional für Cloud-Deployment
+description:
+globs:
+alwaysApply: true
+---

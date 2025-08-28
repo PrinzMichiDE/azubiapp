@@ -1,0 +1,42 @@
+# Learning Experience Platform (LXP) für Azubis - Projektübersicht
+
+## Projektziel
+Entwicklung einer modernen Learning Experience Platform für die Ausbildung von Auszubildenden mit Fokus auf Autonomie, Relevanz und Motivation.
+
+## Kernkonzept
+- **LXP-Ansatz**: Lernerzentriert statt top-down strukturiert
+- **Zielgruppen**: Auszubildende (Lernwerkzeuge) und Ausbilder/Unternehmen (Verwaltungstools)
+- **Technologie**: Next.js + shadcn/ui für moderne, skalierbare Architektur
+
+## Essenzielle Features
+### Für Auszubildende
+- Personalisiertes Dashboard mit KI-Empfehlungen
+- Interaktive Lernpfade (Quizze, Simulationen, Fallstudien)
+- Soziales Lernen (Foren, Projektgruppen, Peer-Feedback)
+- Gamification (Punkte, Badges, Bestenlisten)
+
+### Für Ausbilder/Unternehmen
+- Leistungsanalyse und Dashboards
+- Empfehlungs-Engine-Verwaltung
+- Content-Management-System (CMS)
+- HR-Integration über APIs
+
+## Technische Architektur
+- **Frontend**: React + Next.js mit SSR/SSG
+- **Backend**: Next.js API-Routen
+- **UI**: shadcn/ui + Tailwind CSS
+- **Datenbank**: PostgreSQL (User) + MongoDB (Inhalte)
+- **KI**: OpenAI API oder lokale Lösungen
+- **Deployment**: Vercel mit CI/CD
+
+## Entwicklungsprinzipien
+- Deutsche und englische Kommentare für automatische Dokumentation
+- i18n in Deutsch und Englisch
+- Moderne, konsistente UI/UX
+- Datenschutzkonform (DSGVO)
+- Mobile-optimiert
+- Skalierbar und wartbar
+description:
+globs:
+alwaysApply: true
+---

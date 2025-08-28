@@ -1,0 +1,274 @@
+# Backend-Architektur und API-Design
+
+## Backend-Prinzipien
+- **Sicherheit**: JWT-basierte Authentifizierung, Rate Limiting, Input-Validierung
+- **Performance**: Caching mit Redis, Pagination, optimierte Datenbank-Queries
+- **Skalierbarkeit**: Stateless Design, Microservices-Readiness
+- **Datenschutz**: DSGVO-konform, Consent-Management, Datenminimierung
+- **Fehlerbehandlung**: Zentrale Error-Handler, Monitoring mit Sentry
+
+## Architektur-Überblick
+```
+Frontend → API-Route → Middleware (Auth, Validation) → Service-Layer (Business-Logik) → Repository (DB-Zugriff) → Response
+```
+
+## API-Struktur
+- **Versionierung**: Alle APIs unter `/api/v1/` strukturieren
+- **RESTful Design**: Konsistente HTTP-Methoden und Status-Codes
+- **Endpunkt-Namen**: Plural-Nomen für Ressourcen (z.B. `/users`, `/modules`)
+- **Nested Resources**: Hierarchische Struktur (z.B. `/users/{id}/progress`)
+
+## Middleware-Struktur
+```typescript
+// Authentifizierungs-Middleware
+export async function authenticate(request: Request): Promise<User | null> {
+  try {
+    const token = extractToken(request);
+    if (!token) return null;
+    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { id: true, email: true, role: true, interests: true }
+    });
+    
+    return user;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Rate Limiting Middleware
+export async function rateLimit(request: Request): Promise<boolean> {
+  const ip = getClientIP(request);
+  const key = `rate_limit:${ip}`;
+  
+  const current = await redis.incr(key);
+  if (current === 1) {
+    await redis.expire(key, 60); // 1 Minute
+  }
+  
+  return current <= 100; // Max 100 Requests pro Minute
+}
+
+// Validierung-Middleware mit Zod
+export function validateRequest<T>(schema: ZodSchema<T>) {
+  return async (request: Request): Promise<T> => {
+    const body = await request.json();
+    return schema.parse(body);
+  };
+}
+```
+
+## Service-Layer Pattern
+```typescript
+// Learning Service
+export class LearningService {
+  constructor(
+    private prisma: PrismaClient,
+    private openai: OpenAI,
+    private redis: Redis
+  ) {}
+  
+  async getRecommendations(userId: number): Promise<Module[]> {
+    // Cache-Check
+    const cached = await this.redis.get(`recommendations:${userId}`);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+    
+    // Benutzer-Historie abrufen
+    const history = await this.prisma.completion.findMany({
+      where: { userId },
+      include: { module: true }
+    });
+    
+    // KI-Empfehlungen generieren
+    const recommendations = await this.generateAIRecommendations(history);
+    
+    // Cache setzen (5 Minuten)
+    await this.redis.setex(`recommendations:${userId}`, 300, JSON.stringify(recommendations));
+    
+    return recommendations;
+  }
+  
+  private async generateAIRecommendations(history: Completion[]): Promise<Module[]> {
+    const prompt = `Empfehle Lernmodule basierend auf der Historie: ${JSON.stringify(history)}`;
+    
+    const response = await this.openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL!,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 500
+    });
+    
+    // Response parsen und Module abrufen
+    const moduleIds = this.parseAIResponse(response.choices[0].message.content);
+    return this.prisma.module.findMany({
+      where: { id: { in: moduleIds } }
+    });
+  }
+}
+```
+
+## Repository Pattern
+```typescript
+// Base Repository
+export abstract class BaseRepository<T> {
+  constructor(protected prisma: PrismaClient) {}
+  
+  async findById(id: number): Promise<T | null> {
+    return this.prisma[this.getModelName()].findUnique({
+      where: { id }
+    });
+  }
+  
+  async create(data: any): Promise<T> {
+    return this.prisma[this.getModelName()].create({ data });
+  }
+  
+  async update(id: number, data: any): Promise<T> {
+    return this.prisma[this.getModelName()].update({
+      where: { id },
+      data
+    });
+  }
+  
+  async delete(id: number): Promise<T> {
+    return this.prisma[this.getModelName()].delete({
+      where: { id }
+    });
+  }
+  
+  protected abstract getModelName(): string;
+}
+
+// User Repository
+export class UserRepository extends BaseRepository<User> {
+  protected getModelName(): string {
+    return 'user';
+  }
+  
+  async findByEmail(email: string): Promise<User | null> {
+    return this.prisma.user.findUnique({
+      where: { email }
+    });
+  }
+  
+  async updateProgress(userId: number, progress: any): Promise<User> {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { progress }
+    });
+  }
+}
+```
+
+## Error Handling
+```typescript
+// Zentrale Error-Klassen
+export class AppError extends Error {
+  constructor(
+    public statusCode: number,
+    public message: string,
+    public isOperational = true
+  ) {
+    super(message);
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+export class ValidationError extends AppError {
+  constructor(message: string) {
+    super(400, message);
+  }
+}
+
+export class AuthenticationError extends AppError {
+  constructor(message: string = 'Nicht authentifiziert') {
+    super(401, message);
+  }
+}
+
+export class AuthorizationError extends AppError {
+  constructor(message: string = 'Keine Berechtigung') {
+    super(403, message);
+  }
+}
+
+// Global Error Handler
+export function handleError(error: Error, request: Request): Response {
+  if (error instanceof AppError) {
+    return NextResponse.json({
+      error: {
+        code: error.statusCode,
+        message: error.message,
+        timestamp: new Date().toISOString()
+      }
+    }, { status: error.statusCode });
+  }
+  
+  // Unerwartete Fehler loggen
+  console.error('Unexpected error:', error);
+  
+  return NextResponse.json({
+    error: {
+      code: 500,
+      message: 'Interner Server-Fehler',
+      timestamp: new Date().toISOString()
+    }
+  }, { status: 500 });
+}
+```
+
+## API-Response-Standards
+```typescript
+// Standardisierte API-Responses
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+  meta?: {
+    pagination?: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+    timestamp: string;
+  };
+}
+
+// Response-Helper
+export function successResponse<T>(data: T, meta?: any): ApiResponse<T> {
+  return {
+    success: true,
+    data,
+    meta: {
+      ...meta,
+      timestamp: new Date().toISOString()
+    }
+  };
+}
+
+export function errorResponse(code: string, message: string, details?: any): ApiResponse {
+  return {
+    success: false,
+    error: {
+      code,
+      message,
+      details
+    },
+    meta: {
+      timestamp: new Date().toISOString()
+    }
+  };
+}
+```
+description:
+globs:
+alwaysApply: true
+---

@@ -1,0 +1,73 @@
+# API-Standards und Backend-Entwicklung
+
+## API-Struktur
+- **RESTful Design**: Konsistente HTTP-Methoden und Status-Codes
+- **Versionierung**: Alle APIs unter `/api/v1/` strukturieren
+- **Endpunkt-Namen**: Plural-Nomen für Ressourcen (z.B. `/users`, `/modules`)
+- **Nested Resources**: Hierarchische Struktur (z.B. `/users/{id}/progress`)
+
+## Authentifizierung und Autorisierung
+- **NextAuth.js**: OAuth-Integration für verschiedene Provider
+- **JWT-Tokens**: Sichere Token-basierte Authentifizierung
+- **Role-Based Access Control (RBAC)**: Granulare Berechtigungen
+- **API-Keys**: Für externe HR-System-Integrationen
+
+## Datenvalidierung
+- **Zod-Schemas**: Runtime-Validierung aller Eingabedaten
+- **Input Sanitization**: Schutz vor XSS und Injection-Angriffen
+- **Rate Limiting**: Schutz vor API-Missbrauch
+- **Request Size Limits**: Maximale Größe für Uploads
+
+## Error Handling
+```typescript
+// Standardisierte Fehler-Response
+interface ApiError {
+  error: {
+    code: string;
+    message: string;
+    details?: Record<string, any>;
+    timestamp: string;
+    requestId: string;
+  };
+}
+
+// HTTP Status Codes
+const HTTP_STATUS = {
+  OK: 200,
+  CREATED: 201,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  INTERNAL_SERVER_ERROR: 500,
+} as const;
+```
+
+## Datenbank-Integration
+- **Prisma ORM**: Type-safe Datenbankzugriff
+- **Connection Pooling**: Optimierte Datenbankverbindungen
+- **Migrations**: Versionierte Datenbankschema-Änderungen
+- **Seeding**: Testdaten für Entwicklung und Tests
+
+## Performance und Caching
+- **Redis**: Session-Speicherung und Caching
+- **Database Indexing**: Optimierte Datenbankabfragen
+- **Pagination**: Limit/Offset für große Datensätze
+- **Response Compression**: Gzip für reduzierte Bandbreite
+
+## Monitoring und Logging
+- **Structured Logging**: JSON-Formatierte Logs
+- **Performance Metrics**: Response-Zeiten und Durchsatz
+- **Error Tracking**: Sentry oder ähnliche Dienste
+- **Health Checks**: `/api/health` Endpunkt für Monitoring
+
+## API-Dokumentation
+- **OpenAPI/Swagger**: Automatische API-Dokumentation
+- **JSDoc Comments**: Deutsche und englische Kommentare
+- **Example Requests**: Beispiele für alle Endpunkte
+- **Testing**: Postman Collections für API-Tests
+description:
+globs:
+alwaysApply: true
+---

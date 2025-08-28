@@ -1,0 +1,117 @@
+# Komponentenarchitektur und shadcn/ui Integration
+
+## Komponenten-Hierarchie
+- **Atomic Design**: Atoms → Molecules → Organisms → Templates → Pages
+- **Container/Presentational Pattern**: Trennung von Logik und Darstellung
+- **Compound Components**: Für komplexe UI-Strukturen
+- **Custom Hooks**: Für wiederverwendbare Logik
+
+## shadcn/ui Komponenten und LXP-Anpassungen
+
+### Basis-Komponenten
+| shadcn/ui | LXP-Anpassung | Verwendung |
+|------------|----------------|------------|
+| Button | Gamification-Farben (grün für "Abschließen") | Quiz-Antworten, Feedback-Submit |
+| Card | Mit Badges für Achievements | Dashboard-Karten für Empfehlungen |
+| Dialog/Modal | Für Peer-Feedback-Formulare | Pop-ups für Gruppen-Einladungen |
+| Tabs | Für Wechsel zwischen Modulen | Lernpfad-Navigation |
+| Table | Mit Sortierfunktion | Bestenlisten, Analysen |
+| Form | Validierung mit Zod | User-generated Content-Upload |
+| Badge | Animierte Effekte | Achievements anzeigen |
+| Progress | Farbverlauf basierend auf Fortschritt | Lernbalken |
+| Tooltip | Für Erklärungen | Hover über Icons in Foren |
+
+### Benutzerdefinierte LXP-Komponenten
+```typescript
+// AchievementBadge - Zeigt Badges mit Tooltips und Unlock-Animationen
+interface AchievementBadgeProps {
+  achievement: Achievement;
+  isUnlocked: boolean;
+  onUnlock?: () => void;
+}
+
+export function AchievementBadge({ achievement, isUnlocked, onUnlock }: AchievementBadgeProps) {
+  return (
+    <Badge 
+      variant={isUnlocked ? "default" : "secondary"}
+      className={cn(
+        "transition-all duration-300",
+        isUnlocked && "animate-bounce"
+      )}
+    >
+      {achievement.icon} {achievement.name}
+    </Badge>
+  );
+}
+
+// InteractiveQuiz - Adaptives Quiz mit real-time Feedback
+interface InteractiveQuizProps {
+  questions: QuizQuestion[];
+  onComplete: (score: number) => void;
+}
+
+export function InteractiveQuiz({ questions, onComplete }: InteractiveQuizProps) {
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [score, setScore] = useState(0);
+  
+  // Quiz-Logik hier implementieren
+  // Quiz logic to be implemented here
+}
+```
+
+## Komponenten-Struktur
+```
+components/
+├── ui/                    # shadcn/ui Basis-Komponenten
+│   ├── button.tsx
+│   ├── card.tsx
+│   ├── dialog.tsx
+│   └── ...
+├── forms/                 # Formulare und Validierung
+│   ├── learning-form.tsx
+│   ├── feedback-form.tsx
+│   └── upload-form.tsx
+├── learning/              # Lern-spezifische Komponenten
+│   ├── learning-card.tsx
+│   ├── progress-ring.tsx
+│   ├── quiz-item.tsx
+│   └── simulation-viewer.tsx
+├── community/             # Community-Funktionen
+│   ├── thread-list.tsx
+│   ├── group-card.tsx
+│   ├── chat-widget.tsx
+│   └── peer-feedback.tsx
+├── dashboard/             # Dashboard-Komponenten
+│   ├── stats-card.tsx
+│   ├── recommendation-card.tsx
+│   ├── activity-feed.tsx
+│   └── chart-widget.tsx
+└── admin/                 # Admin-spezifische Komponenten
+    ├── analytics-chart.tsx
+    ├── user-management.tsx
+    ├── content-editor.tsx
+    └── report-generator.tsx
+```
+
+## Komponenten-Entwicklungsrichtlinien
+- **Props-Interface**: Immer TypeScript-Interfaces für Props definieren
+- **Default Values**: Sinnvolle Standardwerte für optionale Props
+- **Error Boundaries**: Fehlerbehandlung für kritische Komponenten
+- **Loading States**: Skeleton-Loader für asynchrone Daten
+- **Error States**: Benutzerfreundliche Fehlermeldungen
+
+## State Management
+- **Local State**: useState für komponenten-spezifischen State
+- **Global State**: React Context für App-weite Daten
+- **Server State**: React Query/SWR für API-Daten
+- **Form State**: React Hook Form für komplexe Formulare
+
+## Performance-Optimierung
+- **React.memo**: Für Komponenten, die sich selten ändern
+- **useMemo/useCallback**: Für teure Berechnungen und Callbacks
+- **Lazy Loading**: Dynamische Imports für große Komponenten
+- **Code Splitting**: Aufteilen von Komponenten in separate Bundles
+description:
+globs:
+alwaysApply: true
+---

@@ -1,0 +1,238 @@
+---
+globs: *.tsx,*.ts,layout.tsx,_app.tsx
+description: "Vercel Analytics and Speed Insights integration standards"
+---
+
+# Vercel Analytics und Speed Insights Integration Standards
+# Vercel Analytics and Speed Insights Integration Standards
+
+## Standard Imports / Standard-Importe
+
+**Immer diese Standard-Importe verwenden:**
+**Always use these standard imports:**
+
+```typescript
+import { SpeedInsights } from "@vercel/speed-insights/next"
+import { Analytics } from "@vercel/analytics/next"
+```
+
+## Layout Integration / Layout-Integration
+
+### Root Layout Placement / Root Layout Platzierung
+
+**Vercel Analytics und Speed Insights MÜSSEN in der Hauptlayout-Datei integriert werden:**
+**Vercel Analytics and Speed Insights MUST be integrated in the main layout file:**
+
+- **Next.js App Router:** [src/app/[locale]/layout.tsx](mdc:src/app/[locale]/layout.tsx)
+- **Next.js Pages Router:** `pages/_app.tsx`
+
+### Korrekte Platzierung im Body / Correct Body Placement
+
+```typescript
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <html>
+      <body>
+        {/* Hauptinhalt / Main content */}
+        {children}
+        
+        {/* Vercel Analytics - Immer am Ende des Body */}
+        {/* Vercel Analytics - Always at the end of body */}
+        <Analytics />
+        <SpeedInsights />
+      </body>
+    </html>
+  )
+}
+```
+
+## Environment Configuration / Umgebungskonfiguration
+
+### Conditional Loading / Bedingte Ladung
+
+**Nur in Produktionsumgebung laden für optimale Performance:**
+**Load only in production environment for optimal performance:**
+
+```typescript
+{process.env.NODE_ENV === 'production' && (
+  <>
+    <Analytics />
+    <SpeedInsights />
+  </>
+)}
+```
+
+### Environment Variables / Umgebungsvariablen
+
+**Erforderliche Umgebungsvariablen in `.env.local`:**
+**Required environment variables in `.env.local`:**
+
+```bash
+# Vercel Analytics
+NEXT_PUBLIC_VERCEL_ANALYTICS_ID=your_analytics_id
+
+# Vercel Speed Insights
+NEXT_PUBLIC_VERCEL_SPEED_INSIGHTS_ID=your_speed_insights_id
+```
+
+## Best Practices / Bewährte Praktiken
+
+### 1. Single Integration Point / Einziger Integrationspunkt
+
+- **NIEMALS** Analytics in mehreren Layout-Dateien importieren
+- **NEVER** import Analytics in multiple layout files
+- **NUR** in der Hauptlayout-Komponente verwenden
+- **ONLY** use in the main layout component
+
+### 2. Performance Optimization / Performance-Optimierung
+
+```typescript
+// Mit React.lazy für Code-Splitting
+// With React.lazy for code splitting
+const Analytics = lazy(() => import('@vercel/analytics/next').then(module => ({ default: module.Analytics })))
+const SpeedInsights = lazy(() => import('@vercel/speed-insights/next').then(module => ({ default: module.SpeedInsights })))
+
+// Mit Suspense wrapper
+// With Suspense wrapper
+<Suspense fallback={null}>
+  <Analytics />
+  <SpeedInsights />
+</Suspense>
+```
+
+### 3. TypeScript Integration / TypeScript-Integration
+
+```typescript
+// Type-sichere Konfiguration
+// Type-safe configuration
+interface AnalyticsConfig {
+  beforeSend?: (event: any) => any
+  debug?: boolean
+}
+
+const analyticsConfig: AnalyticsConfig = {
+  debug: process.env.NODE_ENV === 'development',
+  beforeSend: (event) => {
+    // Custom event filtering
+    return event
+  }
+}
+```
+
+### 4. Custom Events / Benutzerdefinierte Ereignisse
+
+```typescript
+import { track } from '@vercel/analytics'
+
+// Benutzerdefinierte Ereignisse verfolgen
+// Track custom events
+const handleButtonClick = () => {
+  track('button_click', {
+    location: 'header',
+    type: 'navigation'
+  })
+}
+```
+
+## Security Considerations / Sicherheitsüberlegungen
+
+### Privacy Compliance / Datenschutzkonformität
+
+```typescript
+// GDPR/DSGVO konforme Implementierung
+// GDPR compliant implementation
+const Analytics = () => {
+  const [consent, setConsent] = useState(false)
+  
+  useEffect(() => {
+    // Prüfe Cookie-Einstellungen
+    // Check cookie preferences
+    const hasConsent = localStorage.getItem('analytics-consent') === 'true'
+    setConsent(hasConsent)
+  }, [])
+  
+  if (!consent) return null
+  
+  return <VercelAnalytics />
+}
+```
+
+## Error Handling / Fehlerbehandlung
+
+```typescript
+// Fehlerbehandlung für Analytics-Fehler
+// Error handling for Analytics failures
+const SafeAnalytics = () => {
+  try {
+    return (
+      <>
+        <Analytics />
+        <SpeedInsights />
+      </>
+    )
+  } catch (error) {
+    console.warn('Analytics initialization failed:', error)
+    return null
+  }
+}
+```
+
+## Testing Considerations / Test-Überlegungen
+
+### Development vs Production / Entwicklung vs Produktion
+
+```typescript
+// Verschiedene Konfigurationen für verschiedene Umgebungen
+// Different configurations for different environments
+const isDevelopment = process.env.NODE_ENV === 'development'
+const isProduction = process.env.NODE_ENV === 'production'
+
+{isProduction && (
+  <>
+    <Analytics />
+    <SpeedInsights />
+  </>
+)}
+
+{isDevelopment && (
+  // Entwicklungs-spezifische Analytics (optional)
+  // Development-specific analytics (optional)
+  <Analytics debug={true} />
+)}
+```
+
+## Package Version Management / Paket-Versionsverwaltung
+
+**Aktuellste Versionen verwenden (Stand: 2024):**
+**Use latest versions (as of 2024):**
+
+```json
+{
+  "dependencies": {
+    "@vercel/analytics": "^1.5.0",
+    "@vercel/speed-insights": "^1.2.0"
+  }
+}
+```
+
+**Immer mit npm-check-updates auf dem neuesten Stand halten:**
+**Always keep up to date with npm-check-updates:**
+
+```bash
+npx npm-check-updates -u @vercel/analytics @vercel/speed-insights
+```
+
+## Integration Checklist / Integrations-Checkliste
+
+- [ ] Analytics und SpeedInsights in Hauptlayout integriert
+- [ ] Analytics and SpeedInsights integrated in main layout
+- [ ] Nur in Produktionsumgebung aktiv
+- [ ] Only active in production environment  
+- [ ] Umgebungsvariablen konfiguriert
+- [ ] Environment variables configured
+- [ ] Datenschutz-Einstellungen berücksichtigt
+- [ ] Privacy settings considered
+- [ ] Fehlerbehandlung implementiert
+- [ ] Error handling implemented
+- [ ] Performance-Optimierung angewendet
+- [ ] Performance optimization applied

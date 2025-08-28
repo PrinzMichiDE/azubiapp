@@ -1,0 +1,1199 @@
+# Barrierefreiheit (Accessibility) und WCAG 2.1-Konformität
+
+## Übersicht
+
+Die LXP-Plattform implementiert umfassende Barrierefreiheit gemäß WCAG 2.1 Level AA-Standards, um Inklusion für alle Nutzer zu gewährleisten und gesetzliche Anforderungen (z.B. BITV 2.0 in Deutschland) zu erfüllen. Das Konzept umfasst UI-Komponenten, Tastaturnavigation, Kontraste, Screen Reader-Unterstützung und automatisierte Tests.
+
+## Ziele
+
+- **WCAG 2.1 Level AA**: Vollständige Konformität mit internationalen Standards
+- **Inklusion**: Zugänglichkeit für Nutzer mit verschiedenen Behinderungen
+- **Gesetzliche Compliance**: Erfüllung von BITV 2.0 und anderen Vorgaben
+- **Benutzerfreundlichkeit**: Verbesserte UX für alle Nutzer
+- **Automatisierte Tests**: Lighthouse und axe DevTools Integration
+- **Konfigurierbarkeit**: Steuerung über .env-Variablen
+
+## WCAG 2.1 Level AA Standards
+
+### Wahrnehmbarkeit (Perceivable)
+- **1.1 Textalternativen**: Alt-Texte für alle Bilder und Videos
+- **1.2 Zeitbasierte Medien**: Untertitel und Audiodeskriptionen
+- **1.3 Anpassbar**: Logische Struktur und semantische Markup
+- **1.4 Unterscheidbar**: Ausreichende Kontraste (mindestens 4.5:1)
+
+### Bedienbarkeit (Operable)
+- **2.1 Tastaturzugänglich**: Vollständige Navigation ohne Maus
+- **2.2 Ausreichend Zeit**: Anpassbare Zeitlimits für Quizze
+- **2.3 Anfälle**: Keine blinkenden oder flackernden Inhalte
+- **2.4 Navigierbar**: Klare Navigationsstruktur und Breadcrumbs
+
+### Verständlichkeit (Understandable)
+- **3.1 Lesbar**: Klare Sprache und Abkürzungen erklären
+- **3.2 Vorhersagbar**: Konsistente Navigation und Layouts
+- **3.3 Eingabehilfen**: Fehlervermeidung und -korrektur
+
+### Robustheit (Robust)
+- **4.1 Kompatibel**: Maximale Browser- und Assistive Technology-Kompatibilität
+
+## UI-Komponenten mit ARIA-Support
+
+### shadcn/ui Accessibility Integration
+```typescript
+// components/ui/accessible-button.tsx
+import { Button, ButtonProps } from '@/components/ui/shadcn';
+import { forwardRef } from 'react';
+
+interface AccessibleButtonProps extends ButtonProps {
+  ariaLabel?: string;
+  ariaDescribedBy?: string;
+  ariaExpanded?: boolean;
+  ariaPressed?: boolean;
+  ariaControls?: string;
+}
+
+export const AccessibleButton = forwardRef<HTMLButtonElement, AccessibleButtonProps>(
+  ({ ariaLabel, ariaDescribedBy, ariaExpanded, ariaPressed, ariaControls, children, ...props }, ref) => {
+    return (
+      <Button
+        ref={ref}
+        aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+        aria-expanded={ariaExpanded}
+        aria-pressed={ariaPressed}
+        aria-controls={ariaControls}
+        {...props}
+      >
+        {children}
+      </Button>
+    );
+  }
+);
+
+AccessibleButton.displayName = 'AccessibleButton';
+```
+
+### Accessible Form Components
+```typescript
+// components/ui/accessible-form.tsx
+import { Input, InputProps } from '@/components/ui/shadcn';
+import { Label, LabelProps } from '@/components/ui/shadcn';
+import { forwardRef } from 'react';
+
+interface AccessibleInputProps extends InputProps {
+  label: string;
+  description?: string;
+  error?: string;
+  required?: boolean;
+  helperText?: string;
+}
+
+export const AccessibleInput = forwardRef<HTMLInputElement, AccessibleInputProps>(
+  ({ label, description, error, required, helperText, id, ...props }, ref) => {
+    const inputId = id || `input-${Math.random().toString(36).substr(2, 9)}`;
+    const descriptionId = `${inputId}-description`;
+    const errorId = `${inputId}-error`;
+    const helperId = `${inputId}-helper`;
+
+    return (
+      <div className="space-y-2">
+        <Label htmlFor={inputId} className="text-sm font-medium">
+          {label}
+          {required && <span className="text-red-500 ml-1" aria-label="erforderlich">*</span>}
+        </Label>
+        
+        {description && (
+          <p id={descriptionId} className="text-sm text-muted-foreground">
+            {description}
+          </p>
+        )}
+        
+        <Input
+          ref={ref}
+          id={inputId}
+          aria-describedby={`${descriptionId} ${errorId} ${helperId}`.trim()}
+          aria-invalid={!!error}
+          aria-required={required}
+          {...props}
+        />
+        
+        {error && (
+          <p id={errorId} className="text-sm text-red-500" role="alert">
+            {error}
+          </p>
+        )}
+        
+        {helperText && (
+          <p id={helperId} className="text-sm text-muted-foreground">
+            {helperText}
+          </p>
+        )}
+      </div>
+    );
+  }
+);
+
+AccessibleInput.displayName = 'AccessibleInput';
+```
+
+### Accessible Navigation
+```typescript
+// components/ui/accessible-navigation.tsx
+import { forwardRef } from 'react';
+import { cn } from '@/lib/utils';
+
+interface AccessibleNavigationProps {
+  items: NavigationItem[];
+  currentPath: string;
+  onNavigate: (path: string) => void;
+  className?: string;
+}
+
+interface NavigationItem {
+  label: string;
+  path: string;
+  icon?: React.ReactNode;
+  description?: string;
+}
+
+export const AccessibleNavigation = forwardRef<HTMLElement, AccessibleNavigationProps>(
+  ({ items, currentPath, onNavigate, className }, ref) => {
+    return (
+      <nav
+        ref={ref}
+        className={cn('space-y-1', className)}
+        role="navigation"
+        aria-label="Hauptnavigation"
+      >
+        <ul className="space-y-1">
+          {items.map((item, index) => {
+            const isActive = currentPath === item.path;
+            const isFirst = index === 0;
+            const isLast = index === items.length - 1;
+            
+            return (
+              <li key={item.path}>
+                <button
+                  onClick={() => onNavigate(item.path)}
+                  className={cn(
+                    'w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                    'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500',
+                    'hover:bg-gray-100 dark:hover:bg-gray-800',
+                    isActive && 'bg-blue-100 text-blue-900 dark:bg-blue-900 dark:text-blue-100'
+                  )}
+                  aria-current={isActive ? 'page' : undefined}
+                  aria-describedby={item.description ? `nav-desc-${index}` : undefined}
+                  aria-label={`${item.label}${isActive ? ' (aktuelle Seite)' : ''}`}
+                >
+                  <div className="flex items-center space-x-3">
+                    {item.icon && <span aria-hidden="true">{item.icon}</span>}
+                    <span>{item.label}</span>
+                  </div>
+                </button>
+                
+                {item.description && (
+                  <p
+                    id={`nav-desc-${index}`}
+                    className="sr-only"
+                  >
+                    {item.description}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+    );
+  }
+);
+
+AccessibleNavigation.displayName = 'AccessibleNavigation';
+```
+
+## Tastaturnavigation
+
+### Keyboard Navigation Hook
+```typescript
+// hooks/use-keyboard-navigation.ts
+import { useEffect, useRef, useCallback } from 'react';
+
+interface KeyboardNavigationOptions {
+  onEnter?: () => void;
+  onEscape?: () => void;
+  onTab?: (direction: 'forward' | 'backward') => void;
+  trapFocus?: boolean;
+  focusableSelectors?: string;
+}
+
+export function useKeyboardNavigation(options: KeyboardNavigationOptions = {}) {
+  const containerRef = useRef<HTMLElement>(null);
+  const focusableElements = useRef<HTMLElement[]>([]);
+
+  const getFocusableElements = useCallback(() => {
+    if (!containerRef.current) return [];
+    
+    const selector = options.focusableSelectors || 
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    
+    return Array.from(
+      containerRef.current.querySelectorAll<HTMLElement>(selector)
+    ).filter(el => !el.disabled && el.offsetParent !== null);
+  }, [options.focusableSelectors]);
+
+  const handleKeyDown = useCallback((event: KeyboardEvent) => {
+    switch (event.key) {
+      case 'Enter':
+        if (options.onEnter) {
+          event.preventDefault();
+          options.onEnter();
+        }
+        break;
+        
+      case 'Escape':
+        if (options.onEscape) {
+          event.preventDefault();
+          options.onEscape();
+        }
+        break;
+        
+      case 'Tab':
+        if (options.trapFocus) {
+          event.preventDefault();
+          const direction = event.shiftKey ? 'backward' : 'forward';
+          
+          if (options.onTab) {
+            options.onTab(direction);
+          } else {
+            // Standard Focus-Trapping
+            const elements = getFocusableElements();
+            const currentIndex = elements.indexOf(document.activeElement as HTMLElement);
+            
+            if (direction === 'forward') {
+              const nextIndex = currentIndex < elements.length - 1 ? currentIndex + 1 : 0;
+              elements[nextIndex]?.focus();
+            } else {
+              const prevIndex = currentIndex > 0 ? currentIndex - 1 : elements.length - 1;
+              elements[prevIndex]?.focus();
+            }
+          }
+        }
+        break;
+    }
+  }, [options, getFocusableElements]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    container.addEventListener('keydown', handleKeyDown);
+    focusableElements.current = getFocusableElements();
+
+    return () => {
+      container.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleKeyDown, getFocusableElements]);
+
+  return containerRef;
+}
+```
+
+### Focus Management
+```typescript
+// lib/accessibility/focus-manager.ts
+export class FocusManager {
+  private focusHistory: HTMLElement[] = [];
+  private maxHistorySize = 10;
+
+  // Fokus auf Element setzen und in Historie speichern
+  focus(element: HTMLElement): void {
+    if (element && element.focus) {
+      this.addToHistory(element);
+      element.focus();
+      
+      // Visueller Fokus-Indikator
+      element.classList.add('focus-visible');
+      
+      // Fokus-Indikator nach kurzer Zeit entfernen
+      setTimeout(() => {
+        element.classList.remove('focus-visible');
+      }, 1000);
+    }
+  }
+
+  // Zum vorherigen Fokus-Element zurückkehren
+  focusPrevious(): void {
+    const previous = this.focusHistory[this.focusHistory.length - 2];
+    if (previous) {
+      this.focus(previous);
+    }
+  }
+
+  // Fokus auf erstes fokussierbares Element setzen
+  focusFirst(container: HTMLElement): void {
+    const focusable = this.getFocusableElements(container);
+    if (focusable.length > 0) {
+      this.focus(focusable[0]);
+    }
+  }
+
+  // Fokus auf letztes fokussierbares Element setzen
+  focusLast(container: HTMLElement): void {
+    const focusable = this.getFocusableElements(container);
+    if (focusable.length > 0) {
+      this.focus(focusable[focusable.length - 1]);
+    }
+  }
+
+  // Fokus in Container einsperren (für Modals)
+  trapFocus(container: HTMLElement): void {
+    const focusable = this.getFocusableElements(container);
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    container.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    });
+  }
+
+  private addToHistory(element: HTMLElement): void {
+    // Duplikate entfernen
+    this.focusHistory = this.focusHistory.filter(el => el !== element);
+    
+    // Element zur Historie hinzufügen
+    this.focusHistory.push(element);
+    
+    // Historie-Größe begrenzen
+    if (this.focusHistory.length > this.maxHistorySize) {
+      this.focusHistory.shift();
+    }
+  }
+
+  private getFocusableElements(container: HTMLElement): HTMLElement[] {
+    const selector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    return Array.from(
+      container.querySelectorAll<HTMLElement>(selector)
+    ).filter(el => !el.disabled && el.offsetParent !== null);
+  }
+}
+
+export const focusManager = new FocusManager();
+```
+
+## Kontraste und Farben
+
+### Tailwind CSS Accessibility Classes
+```typescript
+// lib/accessibility/color-contrast.ts
+export const accessibleColors = {
+  // Text-Kontraste (mindestens 4.5:1)
+  text: {
+    primary: 'text-gray-900 dark:text-gray-100',      // 15.6:1
+    secondary: 'text-gray-700 dark:text-gray-300',   // 7.5:1
+    muted: 'text-gray-600 dark:text-gray-400',       // 5.7:1
+    disabled: 'text-gray-400 dark:text-gray-500',    // 3.2:1 (nicht für Haupttext)
+  },
+  
+  // Hintergrund-Kontraste
+  background: {
+    primary: 'bg-white dark:bg-gray-900',
+    secondary: 'bg-gray-50 dark:bg-gray-800',
+    tertiary: 'bg-gray-100 dark:bg-gray-700',
+  },
+  
+  // Akzent-Farben mit ausreichendem Kontrast
+  accent: {
+    primary: 'bg-blue-600 text-white',                // 4.6:1
+    secondary: 'bg-blue-100 text-blue-900',          // 4.8:1
+    success: 'bg-green-600 text-white',              // 4.8:1
+    warning: 'bg-yellow-600 text-white',             // 4.8:1
+    error: 'bg-red-600 text-white',                  // 4.5:1
+  },
+  
+  // Border-Kontraste
+  border: {
+    primary: 'border-gray-300 dark:border-gray-600',  // 4.5:1
+    focus: 'border-blue-500 dark:border-blue-400',   // 4.6:1
+  },
+} as const;
+
+// Kontrast-Checker
+export function checkContrastRatio(foreground: string, background: string): number {
+  // Vereinfachte Kontrast-Berechnung
+  // In der Praxis würde hier eine vollständige WCAG-Kontrast-Berechnung stehen
+  
+  const contrastRatios = {
+    'white-black': 21.0,
+    'white-gray-900': 15.6,
+    'white-gray-800': 12.6,
+    'white-gray-700': 9.5,
+    'white-gray-600': 7.5,
+    'white-gray-500': 5.7,
+    'white-gray-400': 4.5,
+    'white-gray-300': 3.2,
+    'black-white': 21.0,
+    'black-gray-100': 15.6,
+    'black-gray-200': 12.6,
+    'black-gray-300': 9.5,
+    'black-gray-400': 7.5,
+    'black-gray-500': 5.7,
+    'black-gray-600': 4.5,
+    'black-gray-700': 3.2,
+  };
+  
+  const key = `${foreground}-${background}`;
+  return contrastRatios[key as keyof typeof contrastRatios] || 1.0;
+}
+
+// Kontrast-Validierung
+export function validateContrast(foreground: string, background: string, minRatio: number = 4.5): boolean {
+  const ratio = checkContrastRatio(foreground, background);
+  return ratio >= minRatio;
+}
+```
+
+### High Contrast Mode
+```typescript
+// components/ui/high-contrast-toggle.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/shadcn';
+import { Sun, Moon } from 'lucide-react';
+
+export function HighContrastToggle() {
+  const [isHighContrast, setIsHighContrast] = useState(false);
+
+  useEffect(() => {
+    // Benutzereinstellung aus localStorage oder System-Präferenz
+    const saved = localStorage.getItem('high-contrast-mode');
+    const systemPrefers = window.matchMedia('(prefers-contrast: high)').matches;
+    
+    setIsHighContrast(saved === 'true' || systemPrefers);
+  }, []);
+
+  const toggleHighContrast = () => {
+    const newValue = !isHighContrast;
+    setIsHighContrast(newValue);
+    localStorage.setItem('high-contrast-mode', newValue.toString());
+    
+    // CSS-Variablen für High-Contrast-Modus setzen
+    document.documentElement.style.setProperty(
+      '--high-contrast',
+      newValue ? '1' : '0'
+    );
+  };
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={toggleHighContrast}
+      aria-label={`${isHighContrast ? 'Deaktiviere' : 'Aktiviere'} hohen Kontrast`}
+      aria-pressed={isHighContrast}
+    >
+      {isHighContrast ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+      <span className="ml-2 sr-only">
+        {isHighContrast ? 'Hoher Kontrast deaktivieren' : 'Hohen Kontrast aktivieren'}
+      </span>
+    </Button>
+  );
+}
+```
+
+## Screen Reader Support
+
+### ARIA-Labels und Descriptions
+```typescript
+// components/ui/accessible-content.tsx
+import { forwardRef } from 'react';
+
+interface AccessibleImageProps {
+  src: string;
+  alt: string;
+  description?: string;
+  decorative?: boolean;
+  className?: string;
+}
+
+export const AccessibleImage = forwardRef<HTMLImageElement, AccessibleImageProps>(
+  ({ src, alt, description, decorative, className, ...props }, ref) => {
+    if (decorative) {
+      return (
+        <img
+          ref={ref}
+          src={src}
+          alt=""
+          role="presentation"
+          aria-hidden="true"
+          className={className}
+          {...props}
+        />
+      );
+    }
+
+    return (
+      <div>
+        <img
+          ref={ref}
+          src={src}
+          alt={alt}
+          className={className}
+          {...props}
+        />
+        {description && (
+          <p className="sr-only" id={`desc-${Math.random().toString(36).substr(2, 9)}`}>
+            {description}
+          </p>
+        )}
+      </div>
+    );
+  }
+);
+
+AccessibleImage.displayName = 'AccessibleImage';
+
+// Accessible Video Component
+interface AccessibleVideoProps {
+  src: string;
+  title: string;
+  description?: string;
+  hasSubtitles?: boolean;
+  hasAudioDescription?: boolean;
+  className?: string;
+}
+
+export const AccessibleVideo = forwardRef<HTMLVideoElement, AccessibleVideoProps>(
+  ({ src, title, description, hasSubtitles, hasAudioDescription, className, ...props }, ref) => {
+    return (
+      <div>
+        <video
+          ref={ref}
+          src={src}
+          className={className}
+          controls
+          aria-label={title}
+          aria-describedby={description ? `video-desc-${Math.random().toString(36).substr(2, 9)}` : undefined}
+          {...props}
+        >
+          {hasSubtitles && (
+            <track
+              kind="subtitles"
+              src={`${src}.vtt`}
+              srcLang="de"
+              label="Deutsch"
+              default
+            />
+          )}
+          {hasAudioDescription && (
+            <track
+              kind="descriptions"
+              src={`${src}.vtt`}
+              srcLang="de"
+              label="Audiodeskription Deutsch"
+            />
+          )}
+        </video>
+        
+        {description && (
+          <p className="sr-only" id={`video-desc-${Math.random().toString(36).substr(2, 9)}`}>
+            {description}
+          </p>
+        )}
+        
+        <div className="mt-2 text-sm text-muted-foreground">
+          {hasSubtitles && <span>Untertitel verfügbar</span>}
+          {hasSubtitles && hasAudioDescription && <span> • </span>}
+          {hasAudioDescription && <span>Audiodeskription verfügbar</span>}
+        </div>
+      </div>
+    );
+  }
+);
+
+AccessibleVideo.displayName = 'AccessibleVideo';
+```
+
+### Live Regions für dynamische Inhalte
+```typescript
+// components/ui/live-region.tsx
+import { forwardRef, useEffect, useState } from 'react';
+
+interface LiveRegionProps {
+  'aria-live': 'polite' | 'assertive' | 'off';
+  'aria-atomic'?: boolean;
+  'aria-relevant'?: 'additions' | 'removals' | 'text' | 'all';
+  children: React.ReactNode;
+  className?: string;
+}
+
+export const LiveRegion = forwardRef<HTMLDivElement, LiveRegionProps>(
+  ({ 'aria-live': ariaLive, 'aria-atomic': ariaAtomic, 'aria-relevant': ariaRelevant, children, className, ...props }, ref) => {
+    const [announcements, setAnnouncements] = useState<string[]>([]);
+
+    useEffect(() => {
+      if (announcements.length > 0) {
+        const timer = setTimeout(() => {
+          setAnnouncements([]);
+        }, 1000);
+        
+        return () => clearTimeout(timer);
+      }
+    }, [announcements]);
+
+    const announce = (message: string) => {
+      setAnnouncements(prev => [...prev, message]);
+    };
+
+    return (
+      <div
+        ref={ref}
+        aria-live={ariaLive}
+        aria-atomic={ariaAtomic}
+        aria-relevant={ariaRelevant}
+        className={`sr-only ${className || ''}`}
+        {...props}
+      >
+        {announcements.map((announcement, index) => (
+          <span key={index}>{announcement}</span>
+        ))}
+      </div>
+    );
+  }
+);
+
+LiveRegion.displayName = 'LiveRegion';
+
+// Hook für Live-Region-Announcements
+export function useLiveRegion() {
+  const [liveRegion, setLiveRegion] = useState<HTMLDivElement | null>(null);
+
+  const announce = (message: string, priority: 'polite' | 'assertive' = 'polite') => {
+    if (liveRegion) {
+      liveRegion.setAttribute('aria-live', priority);
+      liveRegion.textContent = message;
+      
+      // Reset nach kurzer Zeit
+      setTimeout(() => {
+        liveRegion.textContent = '';
+      }, 1000);
+    }
+  };
+
+  return { liveRegion, setLiveRegion, announce };
+}
+```
+
+## Automatisierte Accessibility-Tests
+
+### Lighthouse Integration
+```typescript
+// lib/accessibility/lighthouse-runner.ts
+import lighthouse from 'lighthouse';
+import chromeLauncher from 'chrome-launcher';
+
+export class LighthouseAccessibilityRunner {
+  async runAccessibilityAudit(url: string): Promise<AccessibilityReport> {
+    try {
+      // Chrome starten
+      const chrome = await chromeLauncher.launch({
+        chromeFlags: ['--headless', '--no-sandbox', '--disable-gpu']
+      });
+
+      // Lighthouse-Konfiguration für Accessibility
+      const options = {
+        logLevel: 'info',
+        output: 'json',
+        onlyCategories: ['accessibility'],
+        port: chrome.port,
+        formFactor: 'desktop',
+        throttling: {
+          rttMs: 40,
+          throughputKbps: 10240,
+          cpuSlowdownMultiplier: 1,
+          requestLatencyMs: 0,
+          downloadThroughputKbps: 0,
+          uploadThroughputKbps: 0
+        }
+      };
+
+      // Lighthouse-Audit ausführen
+      const runnerResult = await lighthouse(url, options);
+      const results = runnerResult.lhr;
+
+      await chrome.kill();
+
+      return this.parseAccessibilityResults(results);
+    } catch (error) {
+      console.error('Lighthouse-Audit fehlgeschlagen:', error);
+      throw new Error('Accessibility-Audit konnte nicht ausgeführt werden');
+    }
+  }
+
+  private parseAccessibilityResults(results: any): AccessibilityReport {
+    const accessibility = results.categories.accessibility;
+    const audits = results.audits;
+
+    const issues = Object.entries(audits)
+      .filter(([_, audit]: [string, any]) => 
+        audit.score !== null && audit.score < 1 && audit.details
+      )
+      .map(([key, audit]: [string, any]) => ({
+        id: key,
+        title: audit.title,
+        description: audit.description,
+        score: audit.score,
+        details: audit.details,
+        impact: this.getImpact(audit.score),
+      }));
+
+    return {
+      score: accessibility.score * 100,
+      issues,
+      timestamp: new Date().toISOString(),
+      url: results.finalUrl,
+    };
+  }
+
+  private getImpact(score: number): 'low' | 'medium' | 'high' {
+    if (score >= 0.9) return 'low';
+    if (score >= 0.6) return 'medium';
+    return 'high';
+  }
+}
+
+interface AccessibilityReport {
+  score: number;
+  issues: AccessibilityIssue[];
+  timestamp: string;
+  url: string;
+}
+
+interface AccessibilityIssue {
+  id: string;
+  title: string;
+  description: string;
+  score: number;
+  details: any;
+  impact: 'low' | 'medium' | 'high';
+}
+
+export const lighthouseRunner = new LighthouseAccessibilityRunner();
+```
+
+### axe DevTools Integration
+```typescript
+// lib/accessibility/axe-runner.ts
+import { AxeBuilder } from '@axe-core/playwright';
+
+export class AxeAccessibilityRunner {
+  async runAxeTest(page: any): Promise<AxeReport> {
+    try {
+      // axe-Test ausführen
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .analyze();
+
+      return this.parseAxeResults(results);
+    } catch (error) {
+      console.error('axe-Test fehlgeschlagen:', error);
+      throw new Error('axe-Accessibility-Test konnte nicht ausgeführt werden');
+    }
+  }
+
+  private parseAxeResults(results: any): AxeReport {
+    const violations = results.violations.map((violation: any) => ({
+      id: violation.id,
+      impact: violation.impact,
+      description: violation.description,
+      help: violation.help,
+      helpUrl: violation.helpUrl,
+      tags: violation.tags,
+      nodes: violation.nodes.map((node: any) => ({
+        html: node.html,
+        target: node.target,
+        failureSummary: node.failureSummary,
+      })),
+    }));
+
+    const passes = results.passes.map((pass: any) => ({
+      id: pass.id,
+      impact: pass.impact,
+      description: pass.description,
+      help: pass.help,
+      helpUrl: pass.helpUrl,
+      tags: pass.tags,
+    }));
+
+    return {
+      violations,
+      passes,
+      timestamp: new Date().toISOString(),
+      url: results.url,
+    };
+  }
+}
+
+interface AxeReport {
+  violations: AxeViolation[];
+  passes: AxePass[];
+  timestamp: string;
+  url: string;
+}
+
+interface AxeViolation {
+  id: string;
+  impact: 'minor' | 'moderate' | 'serious' | 'critical';
+  description: string;
+  help: string;
+  helpUrl: string;
+  tags: string[];
+  nodes: AxeNode[];
+}
+
+interface AxePass {
+  id: string;
+  impact: 'minor' | 'moderate' | 'serious' | 'critical';
+  description: string;
+  help: string;
+  helpUrl: string;
+  tags: string[];
+}
+
+interface AxeNode {
+  html: string;
+  target: string[];
+  failureSummary: string;
+}
+
+export const axeRunner = new AxeAccessibilityRunner();
+```
+
+## Accessibility Testing
+
+### Jest Accessibility Tests
+```typescript
+// __tests__/accessibility/component-accessibility.test.tsx
+import { render, screen } from '@testing-library/react';
+import { axe, toHaveNoViolations } from 'jest-axe';
+import { AccessibleButton } from '@/components/ui/accessible-button';
+import { AccessibleInput } from '@/components/ui/accessible-input';
+
+expect.extend(toHaveNoViolations);
+
+describe('Accessibility Tests', () => {
+  it('AccessibleButton sollte keine Accessibility-Verletzungen haben', async () => {
+    const { container } = render(
+      <AccessibleButton ariaLabel="Test Button">
+        Test
+      </AccessibleButton>
+    );
+
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('AccessibleInput sollte korrekte ARIA-Labels haben', () => {
+    render(
+      <AccessibleInput
+        label="E-Mail"
+        description="Geben Sie Ihre E-Mail-Adresse ein"
+        helperText="Ihre E-Mail wird nicht an Dritte weitergegeben"
+        required
+      />
+    );
+
+    // Label sollte mit Input verbunden sein
+    const input = screen.getByRole('textbox');
+    const label = screen.getByText('E-Mail');
+    
+    expect(input).toHaveAttribute('aria-required', 'true');
+    expect(input).toHaveAttribute('aria-describedby');
+    
+    // Beschreibung sollte verfügbar sein
+    expect(screen.getByText('Geben Sie Ihre E-Mail-Adresse ein')).toBeInTheDocument();
+    expect(screen.getByText('Ihre E-Mail wird nicht an Dritte weitergegeben')).toBeInTheDocument();
+  });
+
+  it('Navigation sollte über Tastatur bedienbar sein', () => {
+    render(
+      <AccessibleNavigation
+        items={[
+          { label: 'Dashboard', path: '/dashboard', description: 'Übersicht über Ihre Kurse' },
+          { label: 'Kurse', path: '/courses', description: 'Alle verfügbaren Kurse' },
+        ]}
+        currentPath="/dashboard"
+        onNavigate={() => {}}
+      />
+    );
+
+    const nav = screen.getByRole('navigation');
+    const buttons = screen.getAllByRole('button');
+    
+    expect(nav).toBeInTheDocument();
+    expect(buttons).toHaveLength(2);
+    
+    // Aktuelle Seite sollte markiert sein
+    const currentButton = screen.getByRole('button', { name: /Dashboard.*aktuelle Seite/ });
+    expect(currentButton).toHaveAttribute('aria-current', 'page');
+  });
+});
+```
+
+### E2E Accessibility Tests
+```typescript
+// tests/e2e/accessibility.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('Accessibility E2E Tests', () => {
+  test('Startseite sollte WCAG 2.1 AA-Standards erfüllen', async ({ page }) => {
+    await page.goto('/');
+    
+    // axe-Test ausführen
+    const accessibilityResults = await page.evaluate(() => {
+      return new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/axe-core/4.7.0/axe.min.js';
+        script.onload = () => {
+          (window as any).axe.run((err: any, results: any) => {
+            if (err) resolve({ error: err.message });
+            resolve(results);
+          });
+        };
+        document.head.appendChild(script);
+      });
+    });
+
+    expect(accessibilityResults.violations).toHaveLength(0);
+  });
+
+  test('Tastaturnavigation sollte vollständig funktionieren', async ({ page }) => {
+    await page.goto('/');
+    
+    // Tab-Navigation testen
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('A');
+    
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('BUTTON');
+    
+    // Enter-Taste sollte funktionieren
+    await page.keyboard.press('Enter');
+    // Überprüfen, ob Aktion ausgeführt wurde
+  });
+
+  test('Screen Reader sollte alle Inhalte korrekt lesen', async ({ page }) => {
+    await page.goto('/');
+    
+    // ARIA-Labels überprüfen
+    const buttons = await page.locator('button').all();
+    for (const button of buttons) {
+      const ariaLabel = await button.getAttribute('aria-label');
+      const textContent = await button.textContent();
+      
+      // Jeder Button sollte entweder einen aria-label oder sichtbaren Text haben
+      expect(ariaLabel || textContent?.trim()).toBeTruthy();
+    }
+    
+    // Alt-Texte für Bilder überprüfen
+    const images = await page.locator('img').all();
+    for (const image of images) {
+      const alt = await image.getAttribute('alt');
+      const role = await image.getAttribute('role');
+      
+      // Bilder sollten entweder alt-Text oder role="presentation" haben
+      expect(alt !== null || role === 'presentation').toBeTruthy();
+    }
+  });
+});
+```
+
+## Umgebungsvariablen
+
+### .env Konfiguration für Accessibility
+```bash
+# .env
+# ========================================
+# ACCESSIBILITY KONFIGURATION
+# ========================================
+ACCESSIBILITY_ENABLED=true
+A11Y_STRICT_MODE=false
+A11Y_WCAG_LEVEL=AA
+
+# Kontrast-Einstellungen
+A11Y_MIN_CONTRAST_RATIO=4.5
+A11Y_HIGH_CONTRAST_MODE=false
+A11Y_COLOR_BLIND_FRIENDLY=true
+
+# Tastaturnavigation
+A11Y_KEYBOARD_NAVIGATION=true
+A11Y_FOCUS_INDICATORS=true
+A11Y_SKIP_LINKS=true
+
+# Screen Reader
+A11Y_SCREEN_READER_OPTIMIZED=true
+A11Y_ARIA_LABELS=true
+A11Y_LIVE_REGIONS=true
+
+# Automatisierte Tests
+A11Y_LIGHTHOUSE_ENABLED=true
+A11Y_AXE_ENABLED=true
+A11Y_TEST_INTERVAL=3600
+
+# High Contrast Mode
+A11Y_HIGH_CONTRAST_DEFAULT=false
+A11Y_HIGH_CONTRAST_PERSIST=true
+
+# Sprache und Lokalisierung
+A11Y_LANGUAGE_ATTRIBUTE=true
+A11Y_DIRECTION_ATTRIBUTE=true
+A11Y_PLURALIZATION=true
+
+# Monitoring
+A11Y_MONITORING_ENABLED=true
+A11Y_ALERT_THRESHOLD=90
+A11Y_REPORTING_ENABLED=true
+```
+
+## Accessibility Monitoring
+
+### Real-time Accessibility Monitoring
+```typescript
+// lib/accessibility/monitor.ts
+export class AccessibilityMonitor {
+  private violations: AccessibilityViolation[] = [];
+  private observers: MutationObserver[] = [];
+
+  startMonitoring(): void {
+    // DOM-Änderungen überwachen
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'childList') {
+          this.checkNewElements(mutation.addedNodes);
+        }
+      });
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+
+    this.observers.push(observer);
+
+    // Regelmäßige Überprüfungen
+    setInterval(() => {
+      this.runAccessibilityCheck();
+    }, 30000); // Alle 30 Sekunden
+  }
+
+  private checkNewElements(nodes: NodeList): void {
+    nodes.forEach((node) => {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const element = node as Element;
+        this.validateElement(element);
+      }
+    });
+  }
+
+  private validateElement(element: Element): void {
+    // Kontrast überprüfen
+    this.checkContrast(element);
+    
+    // ARIA-Labels überprüfen
+    this.checkAriaLabels(element);
+    
+    // Tastaturnavigation überprüfen
+    this.checkKeyboardNavigation(element);
+  }
+
+  private checkContrast(element: Element): void {
+    // Kontrast-Berechnung implementieren
+    // ...
+  }
+
+  private checkAriaLabels(element: Element): void {
+    // ARIA-Label-Validierung implementieren
+    // ...
+  }
+
+  private checkKeyboardNavigation(element: Element): void {
+    // Tastaturnavigation-Validierung implementieren
+    // ...
+  }
+
+  private async runAccessibilityCheck(): Promise<void> {
+    try {
+      // axe-Test ausführen
+      const results = await (window as any).axe.run();
+      
+      if (results.violations.length > 0) {
+        this.violations = results.violations;
+        this.reportViolations();
+      }
+    } catch (error) {
+      console.error('Accessibility-Check fehlgeschlagen:', error);
+    }
+  }
+
+  private reportViolations(): void {
+    // Verletzungen an Monitoring-Service senden
+    if (process.env.A11Y_MONITORING_ENABLED === 'true') {
+      fetch('/api/v1/accessibility/violations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          violations: this.violations,
+          timestamp: new Date().toISOString(),
+          url: window.location.href,
+        }),
+      });
+    }
+  }
+
+  stopMonitoring(): void {
+    this.observers.forEach(observer => observer.disconnect());
+    this.observers = [];
+  }
+}
+
+interface AccessibilityViolation {
+  id: string;
+  impact: string;
+  description: string;
+  help: string;
+  helpUrl: string;
+  tags: string[];
+  nodes: any[];
+}
+
+export const accessibilityMonitor = new AccessibilityMonitor();
+```
+
+## Nächste Schritte
+
+1. **WCAG 2.1 AA Compliance**: Vollständige Implementierung aller Standards
+2. **Tastaturnavigation**: Alle UI-Komponenten tastaturbedienbar machen
+3. **Screen Reader Support**: ARIA-Labels und Live-Regions implementieren
+4. **Kontrast-Optimierung**: Farben mit ausreichendem Kontrast verwenden
+5. **Automatisierte Tests**: Lighthouse und axe-Integration
+6. **Monitoring**: Real-time Accessibility-Überwachung
+7. **Benutzer-Tests**: Tests mit echten Screen Reader-Nutzern
+8. **Dokumentation**: Accessibility-Guidelines für Entwickler
+description:
+globs:
+alwaysApply: true
+---

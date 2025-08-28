@@ -1,0 +1,1229 @@
+# Automatische Verarbeitung von Ausbildungsrahmenplänen (ARPs)
+
+## Übersicht
+
+Die automatische Verarbeitung von Ausbildungsrahmenplänen (ARPs) ermöglicht es der LXP-Plattform, neue Berufe automatisch zu integrieren, indem BIBB/IHK-PDFs geparst, analysiert und in strukturierte Lerninhalte umgewandelt werden. Der Prozess nutzt KI (OpenAI) für die Inhaltsgenerierung und ist vollständig in die Microservices-Architektur integriert.
+
+## Ziele
+
+- **Automatisierung**: Vollständige Verarbeitung von ARPs ohne manuellen Eingriff
+- **Genauigkeit**: Präzise Extraktion von Berufsbildpositionen, Lernzielen und zeitlichen Richtwerten
+- **Integration**: Nahtlose Einbindung in Course-Service und CMS-Service
+- **Skalierbarkeit**: Unterstützung für über 320 anerkannte Ausbildungsberufe
+- **Flexibilität**: Anpassbar an verschiedene Berufe und aktualisierte ARPs
+- **Sicherheit**: DSGVO-Konformität und Schutz sensibler Daten
+- **Konfigurierbarkeit**: Steuerung über .env-Variablen
+
+## Prozess der automatischen Verarbeitung
+
+### 1. Eingabe des Berufs und ARP
+
+#### Manuelle Eingabe im Admin Center
+```typescript
+// app/admin/courses/new/page.tsx
+'use client';
+
+import { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/shadcn';
+import { Button } from '@/components/ui/shadcn';
+import { Input } from '@/components/ui/shadcn';
+import { Label } from '@/components/ui/shadcn';
+import { useSession } from 'next-auth/react';
+
+export default function NewCourseFromARP() {
+  const { data: session } = useSession();
+  const [beruf, setBeruf] = useState('');
+  const [arpUrl, setArpUrl] = useState('');
+  const [version, setVersion] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  if (session?.user?.role !== 'ADMIN') {
+    return <div>Zugriff verweigert - Nur für Administratoren</div>;
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsProcessing(true);
+
+    try {
+      const response = await fetch('/api/v1/courses/create-from-arp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ beruf, arpUrl, version }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        // Erfolgsmeldung anzeigen
+      } else {
+        // Fehlermeldung anzeigen
+      }
+    } catch (error) {
+      console.error('Fehler bei der ARP-Verarbeitung:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <h1 className="text-3xl font-bold">Neuen Kurs aus ARP erstellen</h1>
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>Ausbildungsrahmenplan verarbeiten</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="beruf">Berufsbezeichnung</Label>
+              <Input
+                id="beruf"
+                value={beruf}
+                onChange={(e) => setBeruf(e.target.value)}
+                placeholder="z.B. Kaufmann für Büromanagement"
+                required
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="arpUrl">ARP-PDF URL</Label>
+              <Input
+                id="arpUrl"
+                value={arpUrl}
+                onChange={(e) => setArpUrl(e.target.value)}
+                placeholder="https://www.bibb.de/.../arp.pdf"
+                required
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="version">Version</Label>
+              <Input
+                id="version"
+                value={version}
+                onChange={(e) => setVersion(e.target.value)}
+                placeholder="2025-08-01"
+                required
+              />
+            </div>
+            
+            <Button type="submit" disabled={isProcessing}>
+              {isProcessing ? 'Verarbeite ARP...' : 'Kurs aus ARP erstellen'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+```
+
+#### Automatische Erkennung via Cron-Job
+```typescript
+// lib/jobs/arp-scanner.ts
+import cron from 'node-cron';
+import puppeteer from 'puppeteer';
+import { prisma } from '@/lib/prisma';
+import { arpProcessor } from '@/lib/services/arp-processor';
+
+export class ARPScanner {
+  private browser: puppeteer.Browser | null = null;
+
+  async start() {
+    // Täglich um 2:00 Uhr nach neuen ARPs suchen
+    cron.schedule('0 2 * * *', async () => {
+      await this.scanForNewARPs();
+    });
+  }
+
+  private async scanForNewARPs() {
+    try {
+      this.browser = await puppeteer.launch({ headless: true });
+      const page = await this.browser.newPage();
+
+      // BIBB-Website nach neuen ARPs durchsuchen
+      await page.goto('https://www.bibb.de/de/40.php');
+      
+      const newARPs = await page.evaluate(() => {
+        // Logik zum Extrahieren neuer ARP-Links
+        const arpLinks = Array.from(document.querySelectorAll('a[href*="arp"]'));
+        return arpLinks.map(link => ({
+          url: link.href,
+          title: link.textContent,
+          date: new Date().toISOString(),
+        }));
+      });
+
+      // Neue ARPs verarbeiten
+      for (const arp of newARPs) {
+        await this.processNewARP(arp);
+      }
+
+    } catch (error) {
+      console.error('Fehler beim ARP-Scanning:', error);
+    } finally {
+      if (this.browser) {
+        await this.browser.close();
+      }
+    }
+  }
+
+  private async processNewARP(arp: any) {
+    try {
+      // Prüfen ob ARP bereits verarbeitet wurde
+      const existing = await prisma.trainingPlan.findFirst({
+        where: { arpUrl: arp.url }
+      });
+
+      if (!existing) {
+        await arpProcessor.processFromURL(arp.url, arp.title);
+      }
+    } catch (error) {
+      console.error(`Fehler bei der Verarbeitung von ${arp.url}:`, error);
+    }
+  }
+}
+```
+
+### 2. PDF-Parsing und Datenextraktion
+
+#### PDF-Parser Service
+```typescript
+// lib/services/pdf-parser.ts
+import pdf from 'pdf-parse';
+import Tesseract from 'tesseract.js';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+
+export class PDFParser {
+  private s3: S3Client;
+
+  constructor() {
+    this.s3 = new S3Client({ region: process.env.AWS_REGION });
+  }
+
+  async parseFromS3(s3Key: string): Promise<ParsedARP> {
+    try {
+      const command = new GetObjectCommand({
+        Bucket: process.env.AWS_S3_BUCKET,
+        Key: s3Key,
+      });
+
+      const response = await this.s3.send(command);
+      const pdfBuffer = await this.streamToBuffer(response.Body);
+
+      // PDF parsen
+      const parsedData = await pdf(pdfBuffer);
+      
+      // Strukturierte Daten extrahieren
+      return this.extractStructuredData(parsedData.text);
+    } catch (error) {
+      console.error('Fehler beim PDF-Parsing:', error);
+      throw new Error('PDF konnte nicht geparst werden');
+    }
+  }
+
+  private async extractStructuredData(text: string): Promise<ParsedARP> {
+    const sections: ARPSection[] = [];
+    
+    // Berufsbildpositionen extrahieren
+    const sectionMatches = text.match(/Abschnitt\s+[A-Z]:([^]+?)(?=Abschnitt|$)/g);
+    
+    if (sectionMatches) {
+      for (const sectionText of sectionMatches) {
+        const section = this.parseSection(sectionText);
+        if (section) {
+          sections.push(section);
+        }
+      }
+    }
+
+    return {
+      sections,
+      extractedAt: new Date().toISOString(),
+      confidence: this.calculateConfidence(text, sections),
+    };
+  }
+
+  private parseSection(sectionText: string): ARPSection | null {
+    try {
+      // Abschnitt-Name extrahieren
+      const nameMatch = sectionText.match(/Abschnitt\s+[A-Z]:([^\n]+)/);
+      if (!nameMatch) return null;
+
+      const name = nameMatch[1].trim();
+      
+      // Lernziele extrahieren
+      const lernziele = this.extractLernziele(sectionText);
+      
+      // Dauer extrahieren
+      const dauer = this.extractDauer(sectionText);
+
+      return {
+        name,
+        lernziele,
+        dauer,
+        type: this.determineSectionType(name),
+      };
+    } catch (error) {
+      console.error('Fehler beim Parsen des Abschnitts:', error);
+      return null;
+    }
+  }
+
+  private extractLernziele(text: string): string[] {
+    const lernziele: string[] = [];
+    
+    // Verschiedene Muster für Lernziele
+    const patterns = [
+      /Lernziel[:\s]+([^.\n]+)/gi,
+      /Der Azubi soll[^.\n]+/gi,
+      /Die Azubine soll[^.\n]+/gi,
+    ];
+
+    for (const pattern of patterns) {
+      const matches = text.match(pattern);
+      if (matches) {
+        lernziele.push(...matches.map(m => m.replace(/^(Lernziel[:\s]+|Der Azubi soll|Die Azubine soll)/i, '').trim()));
+      }
+    }
+
+    return lernziele.filter(lz => lz.length > 10); // Nur sinnvolle Lernziele
+  }
+
+  private extractDauer(text: string): string {
+    const dauerPatterns = [
+      /(\d+)\s*(Wochen?|Monate?|Jahre?)/i,
+      /(\d+)\s*(Stunden?|h)/i,
+    ];
+
+    for (const pattern of dauerPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        return `${match[1]} ${match[2]}`;
+      }
+    }
+
+    return 'Nicht angegeben';
+  }
+
+  private determineSectionType(name: string): 'pflicht' | 'wahl' | 'integrativ' {
+    const lowerName = name.toLowerCase();
+    
+    if (lowerName.includes('wahl') || lowerName.includes('optional')) {
+      return 'wahl';
+    }
+    
+    if (lowerName.includes('integrativ') || lowerName.includes('übergreifend')) {
+      return 'integrativ';
+    }
+    
+    return 'pflicht';
+  }
+
+  private calculateConfidence(text: string, sections: ARPSection[]): number {
+    // Einfache Heuristik für Konfidenz
+    let confidence = 0;
+    
+    if (sections.length > 0) confidence += 30;
+    if (text.includes('Abschnitt')) confidence += 20;
+    if (text.includes('Lernziel')) confidence += 25;
+    if (text.includes('Wochen') || text.includes('Monate')) confidence += 25;
+    
+    return Math.min(confidence, 100);
+  }
+
+  private async streamToBuffer(stream: any): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+      stream.on('end', () => resolve(Buffer.concat(chunks)));
+      stream.on('error', reject);
+    });
+  }
+}
+
+interface ParsedARP {
+  sections: ARPSection[];
+  extractedAt: string;
+  confidence: number;
+}
+
+interface ARPSection {
+  name: string;
+  lernziele: string[];
+  dauer: string;
+  type: 'pflicht' | 'wahl' | 'integrativ';
+}
+```
+
+### 3. KI-Analyse und Mapping
+
+#### OpenAI Service für ARP-Analyse
+```typescript
+// lib/services/arp-ai-analyzer.ts
+import OpenAI from 'openai';
+import { redis } from '@/lib/redis';
+import { ParsedARP } from './pdf-parser';
+
+export class ARPAIAnalyzer {
+  private openai: OpenAI;
+  private readonly CACHE_TTL = 86400; // 24 Stunden
+
+  constructor() {
+    this.openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      baseURL: process.env.OPENAI_BASE_URL,
+    });
+  }
+
+  async analyzeARP(parsedARP: ParsedARP, beruf: string): Promise<CourseStructure> {
+    const cacheKey = `arp:analysis:${beruf}:${parsedARP.extractedAt}`;
+    
+    // Cache prüfen
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+
+    try {
+      const courseStructure = await this.generateCourseStructure(parsedARP, beruf);
+      
+      // Im Cache speichern
+      await redis.setex(cacheKey, this.CACHE_TTL, JSON.stringify(courseStructure));
+      
+      return courseStructure;
+    } catch (error) {
+      console.error('Fehler bei der KI-Analyse:', error);
+      throw new Error('KI-Analyse fehlgeschlagen');
+    }
+  }
+
+  private async generateCourseStructure(parsedARP: ParsedARP, beruf: string): Promise<CourseStructure> {
+    const prompt = this.buildAnalysisPrompt(parsedARP, beruf);
+
+    const completion = await this.openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: `Du bist ein Experte für Ausbildungsrahmenpläne und Lernplattformen. 
+          Analysiere den gegebenen ARP und erstelle eine strukturierte Kursstruktur mit Modulen, 
+          Inhalten und Gamification-Elementen. Verwende deutsche Begriffe und beachte die 
+          spezifischen Anforderungen des Berufs.`
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 4000,
+    });
+
+    const response = completion.choices[0]?.message?.content;
+    if (!response) {
+      throw new Error('Keine Antwort von OpenAI erhalten');
+    }
+
+    return this.parseAIResponse(response);
+  }
+
+  private buildAnalysisPrompt(parsedARP: ParsedARP, beruf: string): string {
+    return `
+    Analysiere diesen Ausbildungsrahmenplan für den Beruf "${beruf}":
+
+    ${JSON.stringify(parsedARP, null, 2)}
+
+    Erstelle eine Kursstruktur mit folgenden Elementen:
+
+    1. **Kursübersicht**: Name, Beschreibung, Zielgruppe
+    2. **Module**: Pro Berufsbildposition ein Modul
+    3. **Lernziele**: Konkrete, messbare Ziele pro Modul
+    4. **Inhaltstypen**: 
+       - Artikel (Theorie)
+       - Quizze (5-10 Fragen pro Modul)
+       - Simulationen (praktische Übungen)
+       - Fallstudien (realistische Szenarien)
+    5. **Gamification**: 
+       - Punkte pro Modul (50-100)
+       - Badges pro abgeschlossenem Modul
+       - Schwierigkeitsgrade (Anfänger, Fortgeschritten, Experte)
+    6. **Zeitplanung**: Basierend auf den ARP-Zeitangaben
+    7. **Prüfungsvorbereitung**: Zusammenfassungen und Übungen
+
+    Antworte im folgenden JSON-Format:
+    {
+      "course": {
+        "name": "Kursname",
+        "description": "Beschreibung",
+        "targetAudience": "Zielgruppe"
+      },
+      "modules": [
+        {
+          "name": "Modulname",
+          "description": "Beschreibung",
+          "learningObjectives": ["Ziel 1", "Ziel 2"],
+          "duration": "Zeitangabe",
+          "contentTypes": ["article", "quiz", "simulation"],
+          "points": 100,
+          "badge": "Badge-Name",
+          "difficulty": "beginner|intermediate|expert"
+        }
+      ],
+      "gamification": {
+        "totalPoints": 500,
+        "badges": ["Badge 1", "Badge 2"],
+        "certificate": "Zertifikatsname"
+      }
+    }
+    `;
+  }
+
+  private parseAIResponse(response: string): CourseStructure {
+    try {
+      // JSON aus der Antwort extrahieren
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('Kein gültiges JSON in der Antwort gefunden');
+      }
+
+      const courseStructure = JSON.parse(jsonMatch[0]);
+      
+      // Validierung der Struktur
+      this.validateCourseStructure(courseStructure);
+      
+      return courseStructure;
+    } catch (error) {
+      console.error('Fehler beim Parsen der KI-Antwort:', error);
+      throw new Error('KI-Antwort konnte nicht verarbeitet werden');
+    }
+  }
+
+  private validateCourseStructure(structure: any): void {
+    if (!structure.course || !structure.modules || !Array.isArray(structure.modules)) {
+      throw new Error('Ungültige Kursstruktur von KI erhalten');
+    }
+
+    if (structure.modules.length === 0) {
+      throw new Error('Keine Module in der Kursstruktur gefunden');
+    }
+  }
+}
+
+interface CourseStructure {
+  course: {
+    name: string;
+    description: string;
+    targetAudience: string;
+  };
+  modules: CourseModule[];
+  gamification: {
+    totalPoints: number;
+    badges: string[];
+    certificate: string;
+  };
+}
+
+interface CourseModule {
+  name: string;
+  description: string;
+  learningObjectives: string[];
+  duration: string;
+  contentTypes: string[];
+  points: number;
+  badge: string;
+  difficulty: 'beginner' | 'intermediate' | 'expert';
+}
+```
+
+### 4. Kursgenerierung und Inhaltserstellung
+
+#### Course Generator Service
+```typescript
+// lib/services/course-generator.ts
+import { prisma } from '@/lib/prisma';
+import { CourseStructure, CourseModule } from './arp-ai-analyzer';
+import { contentGenerator } from './content-generator';
+import { s3Service } from './s3-service';
+
+export class CourseGenerator {
+  async generateCourse(beruf: string, courseStructure: CourseStructure): Promise<GeneratedCourse> {
+    try {
+      // 1. Kurs in der Datenbank erstellen
+      const course = await prisma.course.create({
+        data: {
+          beruf,
+          name: courseStructure.course.name,
+          description: courseStructure.course.description,
+          targetAudience: courseStructure.course.targetAudience,
+          totalPoints: courseStructure.gamification.totalPoints,
+          status: 'draft',
+          createdAt: new Date(),
+        },
+      });
+
+      // 2. Module und Inhalte generieren
+      const generatedModules = await this.generateModules(course.id, courseStructure.modules);
+
+      // 3. Kurs aktualisieren
+      await prisma.course.update({
+        where: { id: course.id },
+        data: {
+          modules: generatedModules,
+          status: 'generated',
+          updatedAt: new Date(),
+        },
+      });
+
+      return {
+        courseId: course.id,
+        modules: generatedModules,
+        totalContent: generatedModules.reduce((sum, m) => sum + m.contentCount, 0),
+      };
+
+    } catch (error) {
+      console.error('Fehler bei der Kursgenerierung:', error);
+      throw new Error('Kursgenerierung fehlgeschlagen');
+    }
+  }
+
+  private async generateModules(courseId: number, modules: CourseModule[]): Promise<GeneratedModule[]> {
+    const generatedModules: GeneratedModule[] = [];
+
+    for (const module of modules) {
+      try {
+        const generatedModule = await this.generateModule(courseId, module);
+        generatedModules.push(generatedModule);
+      } catch (error) {
+        console.error(`Fehler bei der Generierung des Moduls ${module.name}:`, error);
+        // Modul überspringen, aber weitermachen
+      }
+    }
+
+    return generatedModules;
+  }
+
+  private async generateModule(courseId: number, module: CourseModule): Promise<GeneratedModule> {
+    // 1. Modul in der Datenbank erstellen
+    const dbModule = await prisma.module.create({
+      data: {
+        courseId,
+        name: module.name,
+        description: module.description,
+        learningObjectives: module.learningObjectives,
+        duration: module.duration,
+        difficulty: module.difficulty,
+        points: module.points,
+        badge: module.badge,
+        status: 'generated',
+      },
+    });
+
+    // 2. Inhalte generieren
+    const contents = await this.generateModuleContents(dbModule.id, module);
+
+    // 3. Modul aktualisieren
+    await prisma.module.update({
+      where: { id: dbModule.id },
+      data: {
+        contents,
+        contentCount: contents.length,
+        status: 'completed',
+      },
+    });
+
+    return {
+      id: dbModule.id,
+      name: module.name,
+      contentCount: contents.length,
+      contents,
+    };
+  }
+
+  private async generateModuleContents(moduleId: number, module: CourseModule): Promise<GeneratedContent[]> {
+    const contents: GeneratedContent[] = [];
+
+    // Artikel generieren
+    if (module.contentTypes.includes('article')) {
+      const article = await contentGenerator.generateArticle(module);
+      contents.push(article);
+    }
+
+    // Quiz generieren
+    if (module.contentTypes.includes('quiz')) {
+      const quiz = await contentGenerator.generateQuiz(module);
+      contents.push(quiz);
+    }
+
+    // Simulation generieren
+    if (module.contentTypes.includes('simulation')) {
+      const simulation = await contentGenerator.generateSimulation(module);
+      contents.push(simulation);
+    }
+
+    // Fallstudie generieren
+    if (module.contentTypes.includes('caseStudy')) {
+      const caseStudy = await contentGenerator.generateCaseStudy(module);
+      contents.push(caseStudy);
+    }
+
+    return contents;
+  }
+}
+
+interface GeneratedCourse {
+  courseId: number;
+  modules: GeneratedModule[];
+  totalContent: number;
+}
+
+interface GeneratedModule {
+  id: number;
+  name: string;
+  contentCount: number;
+  contents: GeneratedContent[];
+}
+
+interface GeneratedContent {
+  type: string;
+  title: string;
+  content: any;
+  metadata: any;
+}
+```
+
+### 5. Integration und Validierung
+
+#### Integration Service
+```typescript
+// lib/services/course-integration.ts
+import { prisma } from '@/lib/prisma';
+import { notificationService } from './notification-service';
+import { auditLogger } from './audit-logger';
+
+export class CourseIntegration {
+  async integrateCourse(courseId: number): Promise<IntegrationResult> {
+    try {
+      // 1. Kurs validieren
+      const validationResult = await this.validateCourse(courseId);
+      
+      if (!validationResult.isValid) {
+        await this.markCourseAsInvalid(courseId, validationResult.errors);
+        throw new Error(`Kurs-Validierung fehlgeschlagen: ${validationResult.errors.join(', ')}`);
+      }
+
+      // 2. In CMS integrieren
+      await this.integrateWithCMS(courseId);
+
+      // 3. Empfehlungs-Engine aktualisieren
+      await this.updateRecommendationEngine(courseId);
+
+      // 4. Kurs als aktiv markieren
+      await prisma.course.update({
+        where: { id: courseId },
+        data: {
+          status: 'active',
+          publishedAt: new Date(),
+        },
+      });
+
+      // 5. Benachrichtigung senden
+      await this.sendNotification(courseId);
+
+      // 6. Audit-Log erstellen
+      await auditLogger.log('course_integrated', {
+        courseId,
+        timestamp: new Date().toISOString(),
+      });
+
+      return {
+        success: true,
+        courseId,
+        message: 'Kurs erfolgreich integriert',
+      };
+
+    } catch (error) {
+      console.error('Fehler bei der Kursintegration:', error);
+      
+      await auditLogger.log('course_integration_failed', {
+        courseId,
+        error: error.message,
+        timestamp: new Date().toISOString(),
+      });
+
+      throw error;
+    }
+  }
+
+  private async validateCourse(courseId: number): Promise<ValidationResult> {
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      include: {
+        modules: {
+          include: { contents: true }
+        }
+      }
+    });
+
+    if (!course) {
+      return { isValid: false, errors: ['Kurs nicht gefunden'] };
+    }
+
+    const errors: string[] = [];
+
+    // Grundlegende Validierung
+    if (!course.name || course.name.trim().length === 0) {
+      errors.push('Kursname fehlt');
+    }
+
+    if (!course.modules || course.modules.length === 0) {
+      errors.push('Keine Module gefunden');
+    }
+
+    // Modul-Validierung
+    for (const module of course.modules) {
+      if (!module.name || module.name.trim().length === 0) {
+        errors.push(`Modul ${module.id}: Name fehlt`);
+      }
+
+      if (!module.contents || module.contents.length === 0) {
+        errors.push(`Modul ${module.name}: Keine Inhalte gefunden`);
+      }
+
+      if (module.points <= 0) {
+        errors.push(`Modul ${module.name}: Ungültige Punktzahl`);
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+    };
+  }
+
+  private async integrateWithCMS(courseId: number): Promise<void> {
+    // CMS-Integration über API
+    const response = await fetch(`${process.env.CMS_SERVICE_URL}/api/courses/${courseId}/integrate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw new Error('CMS-Integration fehlgeschlagen');
+    }
+  }
+
+  private async updateRecommendationEngine(courseId: number): Promise<void> {
+    // Empfehlungs-Engine aktualisieren
+    const response = await fetch(`${process.env.RECOMMENDATION_SERVICE_URL}/api/courses/${courseId}/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw new Error('Empfehlungs-Engine-Update fehlgeschlagen');
+    }
+  }
+
+  private async sendNotification(courseId: number): Promise<void> {
+    const course = await prisma.course.findUnique({
+      where: { id: courseId }
+    });
+
+    if (course) {
+      await notificationService.sendEmail({
+        to: 'admin@lxp.example.com',
+        subject: `Neuer Kurs erfolgreich integriert: ${course.name}`,
+        template: 'course-integration-success',
+        data: {
+          courseName: course.name,
+          courseId: course.id,
+          beruf: course.beruf,
+        },
+      });
+    }
+  }
+
+  private async markCourseAsInvalid(courseId: number, errors: string[]): Promise<void> {
+    await prisma.course.update({
+      where: { id: courseId },
+      data: {
+        status: 'invalid',
+        validationErrors: errors,
+        updatedAt: new Date(),
+      },
+    });
+  }
+}
+
+interface ValidationResult {
+  isValid: boolean;
+  errors: string[];
+}
+
+interface IntegrationResult {
+  success: boolean;
+  courseId: number;
+  message: string;
+}
+```
+
+## API-Endpunkte
+
+### ARP-Verarbeitung API
+```typescript
+// app/api/v1/courses/create-from-arp/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { arpProcessor } from '@/lib/services/arp-processor';
+import { z } from 'zod';
+
+const createFromARPSchema = z.object({
+  beruf: z.string().min(3).max(100),
+  arpUrl: z.string().url(),
+  version: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+export async function POST(request: NextRequest) {
+  try {
+    // 1. Authentifizierung prüfen
+    const session = await getServerSession(authOptions);
+    
+    if (!session || session.user.role !== 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Unauthorized - Nur für Administratoren' },
+        { status: 401 }
+      );
+    }
+
+    // 2. Eingabedaten validieren
+    const body = await request.json();
+    const validatedData = createFromARPSchema.parse(body);
+
+    // 3. ARP-Verarbeitung starten
+    const result = await arpProcessor.processFromURL(
+      validatedData.arpUrl,
+      validatedData.beruf,
+      validatedData.version
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: 'ARP-Verarbeitung gestartet',
+      jobId: result.jobId,
+      courseId: result.courseId,
+    }, { status: 202 });
+
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Validation Error', details: error.errors },
+        { status: 400 }
+      );
+    }
+
+    console.error('ARP-Verarbeitung API Error:', error);
+    return NextResponse.json(
+      { error: 'Internal Server Error' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+### Kurs-Validierung API
+```typescript
+// app/api/v1/courses/validate/[id]/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import { courseIntegration } from '@/lib/services/course-integration';
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    
+    if (!session || !['AUSBILDER', 'ADMIN'].includes(session.user.role)) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    const courseId = parseInt(params.id);
+    
+    if (isNaN(courseId)) {
+      return NextResponse.json(
+        { error: 'Ungültige Kurs-ID' },
+        { status: 400 }
+      );
+    }
+
+    // Kurs validieren und integrieren
+    const result = await courseIntegration.integrateCourse(courseId);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Kurs erfolgreich validiert und integriert',
+      courseId,
+    });
+
+  } catch (error) {
+    console.error('Kurs-Validierung API Error:', error);
+    return NextResponse.json(
+      { error: 'Validierung fehlgeschlagen', details: error.message },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## Datenbank-Schema
+
+### Prisma Schema für ARP-Verarbeitung
+```prisma
+// prisma/schema.prisma
+
+model TrainingPlan {
+  id        Int      @id @default(autoincrement())
+  beruf     String
+  arpUrl    String
+  version   String
+  pdfPath   String?  // S3-Pfad
+  status    String   @default("pending") // pending, processing, completed, failed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  courses   Course[]
+  
+  @@unique([beruf, version])
+}
+
+model Course {
+  id              Int      @id @default(autoincrement())
+  beruf           String
+  name            String
+  description     String?
+  targetAudience  String?
+  totalPoints     Int      @default(0)
+  status          String   @default("draft") // draft, generated, active, invalid
+  validationErrors Json?   // Array von Validierungsfehlern
+  publishedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  trainingPlanId  Int?
+  trainingPlan    TrainingPlan? @relation(fields: [trainingPlanId], references: [id])
+  modules         Module[]
+  
+  @@index([beruf])
+  @@index([status])
+}
+
+model Module {
+  id                 Int      @id @default(autoincrement())
+  courseId           Int
+  name               String
+  description        String?
+  learningObjectives Json     // Array von Lernzielen
+  duration           String?
+  difficulty         String   @default("beginner") // beginner, intermediate, expert
+  points             Int      @default(0)
+  badge              String?
+  status             String   @default("draft") // draft, generated, completed
+  contentCount       Int      @default(0)
+  contents           Json?    // Array von generierten Inhalten
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  course             Course   @relation(fields: [courseId], references: [id])
+  
+  @@index([courseId])
+  @@index([status])
+}
+
+model ARPProcessingJob {
+  id          String   @id @default(cuid())
+  beruf       String
+  arpUrl      String
+  version     String
+  status      String   @default("pending") // pending, processing, completed, failed
+  progress    Int      @default(0) // 0-100
+  error       String?
+  result      Json?    // Ergebnis der Verarbeitung
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  
+  @@index([status])
+  @@index([beruf])
+}
+```
+
+## Umgebungsvariablen
+
+### .env Konfiguration für ARP-Verarbeitung
+```bash
+# .env
+# ========================================
+# ARP-VERARBEITUNG
+# ========================================
+ARP_PROCESSING_ENABLED=true
+ARP_UPDATE_INTERVAL=monthly
+ARP_MAX_FILE_SIZE=10485760  # 10MB
+ARP_SUPPORTED_FORMATS=pdf
+
+# OpenAI für KI-Analyse
+OPENAI_API_KEY=sk-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+OPENAI_BASE_URL=https://custom-api.example.com/v1
+OPENAI_MODEL=gpt-4o
+OPENAI_MAX_TOKENS=4000
+OPENAI_TEMPERATURE=0.7
+
+# AWS S3 für PDF-Storage
+AWS_REGION=eu-central-1
+AWS_S3_BUCKET=lxp-content
+AWS_S3_ARP_PATH=arp
+
+# Microservices
+COURSE_SERVICE_URL=http://course-service:3002
+CMS_SERVICE_URL=http://cms-service:3003
+NOTIFICATION_SERVICE_URL=http://notification-service:3007
+RECOMMENDATION_SERVICE_URL=http://recommendation-service:3004
+
+# Verarbeitungslimits
+ARP_MAX_PROCESSING_TIME=300000  # 5 Minuten
+ARP_MAX_CONCURRENT_JOBS=3
+ARP_RETRY_ATTEMPTS=3
+
+# Cache-Einstellungen
+ARP_CACHE_TTL=86400  # 24 Stunden
+ARP_CACHE_PREFIX=arp:analysis
+
+# Validierung
+ARP_MIN_CONFIDENCE=70
+ARP_REQUIRE_MANUAL_VALIDATION=true
+ARP_AUTO_APPROVE_SIMPLE_COURSES=false
+
+# Benachrichtigungen
+ARP_NOTIFY_ON_COMPLETION=true
+ARP_NOTIFY_ON_FAILURE=true
+ARP_ADMIN_EMAIL=admin@lxp.example.com
+```
+
+## Testing
+
+### ARP-Verarbeitung Tests
+```typescript
+// __tests__/services/arp-processor.test.ts
+import { ARPProcessor } from '@/lib/services/arp-processor';
+import { mockPdfParser } from '@/lib/services/__mocks__/pdf-parser';
+import { mockAIAnalyzer } from '@/lib/services/__mocks__/arp-ai-analyzer';
+
+jest.mock('@/lib/services/pdf-parser');
+jest.mock('@/lib/services/arp-ai-analyzer');
+
+describe('ARPProcessor', () => {
+  let arpProcessor: ARPProcessor;
+
+  beforeEach(() => {
+    arpProcessor = new ARPProcessor();
+  });
+
+  describe('processFromURL', () => {
+    it('verarbeitet ARP erfolgreich', async () => {
+      const mockUrl = 'https://example.com/arp.pdf';
+      const mockBeruf = 'Kaufmann für Büromanagement';
+      const mockVersion = '2025-01-01';
+
+      // Mocks konfigurieren
+      mockPdfParser.parseFromURL.mockResolvedValue({
+        sections: [
+          {
+            name: 'Büroprozesse',
+            lernziele: ['Texte formulieren', 'Termine planen'],
+            dauer: '10 Wochen',
+            type: 'pflicht',
+          },
+        ],
+        confidence: 85,
+      });
+
+      mockAIAnalyzer.analyzeARP.mockResolvedValue({
+        course: {
+          name: 'Kaufmann für Büromanagement',
+          description: 'Kursbeschreibung',
+          targetAudience: 'Auszubildende',
+        },
+        modules: [
+          {
+            name: 'Büroprozesse',
+            description: 'Modulbeschreibung',
+            learningObjectives: ['Texte formulieren'],
+            duration: '10 Wochen',
+            contentTypes: ['article', 'quiz'],
+            points: 100,
+            badge: 'Büroprofi',
+            difficulty: 'beginner',
+          },
+        ],
+        gamification: {
+          totalPoints: 100,
+          badges: ['Büroprofi'],
+          certificate: 'Zertifikat',
+        },
+      });
+
+      const result = await arpProcessor.processFromURL(mockUrl, mockBeruf, mockVersion);
+
+      expect(result.success).toBe(true);
+      expect(result.courseId).toBeDefined();
+      expect(mockPdfParser.parseFromURL).toHaveBeenCalledWith(mockUrl);
+      expect(mockAIAnalyzer.analyzeARP).toHaveBeenCalled();
+    });
+
+    it('behandelt PDF-Parsing-Fehler', async () => {
+      mockPdfParser.parseFromURL.mockRejectedValue(new Error('PDF konnte nicht geparst werden'));
+
+      await expect(
+        arpProcessor.processFromURL('https://example.com/invalid.pdf', 'Test', '2025-01-01')
+      ).rejects.toThrow('PDF konnte nicht geparst werden');
+    });
+  });
+});
+```
+
+## Sicherheitsrichtlinien
+
+### DSGVO-Compliance
+- **Keine personenbezogenen Daten**: ARPs enthalten keine personenbezogenen Daten
+- **Datenminimierung**: Nur notwendige Metadaten werden gespeichert
+- **Löschung**: Alte ARP-Versionen können nach konfigurierbarer Zeit gelöscht werden
+
+### Zugriffskontrolle
+- **Admin-Only**: ARP-Verarbeitung nur für Administratoren
+- **Audit-Logging**: Alle Verarbeitungsschritte werden protokolliert
+- **Rate Limiting**: Schutz vor Missbrauch der ARP-APIs
+
+### Datensicherheit
+- **Verschlüsselung**: PDFs werden verschlüsselt in S3 gespeichert
+- **Validierung**: Alle generierten Inhalte werden vor Integration validiert
+- **Backup**: Regelmäßige Backups der ARP-Daten
+
+## Nächste Schritte
+
+1. **ARP-Processor implementieren**: PDF-Parsing und KI-Analyse
+2. **Admin-UI erweitern**: ARP-Eingabe und Validierung
+3. **Microservices integrieren**: Course-Service und CMS-Service
+4. **Testing**: Unit- und Integration-Tests für ARP-Verarbeitung
+5. **Monitoring**: Überwachung der Verarbeitungsqualität
+6. **Dokumentation**: API-Dokumentation und Benutzerhandbuch
+description:
+globs:
+alwaysApply: true
+---

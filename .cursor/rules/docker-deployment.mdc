@@ -1,0 +1,566 @@
+# Docker-Deployment und Containerisierung
+
+## Docker-Überblick
+- **Multi-Stage Builds**: Optimierte Production-Images
+- **Layer-Caching**: Effiziente Build-Zeiten
+- **Security**: Non-root User, minimale Base-Images
+- **Environment-Specific**: Separate Konfigurationen für Dev/Staging/Production
+
+## Dockerfile-Struktur
+```dockerfile
+# Dockerfile
+# Multi-Stage Build für optimierte Production-Images
+FROM node:18-alpine AS base
+
+# Installiere Abhängigkeiten für native Module
+RUN apk add --no-cache libc6-compat
+
+# Setze Arbeitsverzeichnis
+WORKDIR /app
+
+# Kopiere Package-Dateien
+COPY package*.json ./
+COPY prisma ./prisma/
+
+# Installiere Dependencies
+RUN npm ci --only=production && npm cache clean --force
+
+# Production Stage
+FROM node:18-alpine AS production
+
+# Erstelle non-root User
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nextjs -u 1001
+
+# Setze Arbeitsverzeichnis
+WORKDIR /app
+
+# Kopiere Dependencies und Source-Code
+COPY --from=base --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=base --chown=nextjs:nodejs /app/package*.json ./
+COPY --from=base --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --chown=nextjs:nodejs . .
+
+# Generiere Prisma Client
+RUN npx prisma generate
+
+# Baue die Anwendung
+RUN npm run build
+
+# Setze Umgebungsvariablen
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Exponiere Port
+EXPOSE 3000
+
+# Wechsle zu non-root User
+USER nextjs
+
+# Health Check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:3000/api/health || exit 1
+
+# Starte die Anwendung
+CMD ["npm", "start"]
+```
+
+## Docker Compose für Entwicklung
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  # Next.js Anwendung
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://azubi:password@postgres:5432/azubi_dev
+      - REDIS_URL=redis://redis:6379
+      - NEXTAUTH_URL=http://localhost:3000
+      - NEXTAUTH_SECRET=dev-secret-key
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - azubi-network
+    restart: unless-stopped
+
+  # PostgreSQL Datenbank
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=azubi_dev
+      - POSTGRES_USER=azubi
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - azubi-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U azubi -d azubi_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis für Caching und Sessions
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - azubi-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Adminer für Datenbank-Verwaltung (nur Development)
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgres
+    networks:
+      - azubi-network
+    restart: unless-stopped
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  azubi-network:
+    driver: bridge
+```
+
+## Docker Compose für Production
+```yaml
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  # Next.js Anwendung
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - azubi-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL Datenbank
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/backup:/backup
+    networks:
+      - azubi-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+  # Redis für Caching und Sessions
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - azubi-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/ssl:/etc/nginx/ssl
+      - ./docker/nginx/logs:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - azubi-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  azubi-network:
+    driver: bridge
+```
+
+## Docker Compose für Staging
+```yaml
+# docker-compose.staging.yml
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: staging
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=staging
+      - DATABASE_URL=${STAGING_DATABASE_URL}
+      - REDIS_URL=${STAGING_REDIS_URL}
+      - NEXTAUTH_URL=${STAGING_NEXTAUTH_URL}
+      - NEXTAUTH_SECRET=${STAGING_NEXTAUTH_SECRET}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_MODEL=${OPENAI_MODEL}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - azubi-staging-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=azubi_staging
+      - POSTGRES_USER=azubi_staging
+      - POSTGRES_PASSWORD=${STAGING_POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    networks:
+      - azubi-staging-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_staging_data:/data
+    networks:
+      - azubi-staging-network
+    restart: unless-stopped
+
+volumes:
+  postgres_staging_data:
+    driver: local
+  redis_staging_data:
+    driver: local
+
+networks:
+  azubi-staging-network:
+    driver: bridge
+```
+
+## Docker Ignore
+```dockerignore
+# .dockerignore
+# Dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js Build
+.next/
+out/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+README.md
+docs/
+
+# Tests
+coverage/
+.nyc_output/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Logs
+logs/
+*.log
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+```
+
+## Docker Build Scripts
+```bash
+# docker/build.sh
+#!/bin/bash
+
+# Build-Script für verschiedene Umgebungen
+set -e
+
+ENVIRONMENT=${1:-development}
+TAG=${2:-latest}
+
+echo "Building for environment: $ENVIRONMENT"
+echo "Tag: $TAG"
+
+case $ENVIRONMENT in
+  "development")
+    docker build -t azubi-lxp:dev-$TAG --target development .
+    ;;
+  "staging")
+    docker build -t azubi-lxp:staging-$TAG --target staging .
+    ;;
+  "production")
+    docker build -t azubi-lxp:prod-$TAG --target production .
+    ;;
+  *)
+    echo "Unknown environment: $ENVIRONMENT"
+    echo "Usage: $0 [development|staging|production] [tag]"
+    exit 1
+    ;;
+esac
+
+echo "Build completed successfully!"
+echo "Image: azubi-lxp:$ENVIRONMENT-$TAG"
+```
+
+## Docker Health Checks
+```typescript
+// app/api/health/route.ts
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { redis } from '@/lib/redis';
+
+export async function GET() {
+  const healthChecks = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    checks: {
+      database: 'unknown',
+      redis: 'unknown',
+      uptime: process.uptime()
+    }
+  };
+
+  try {
+    // Datenbank-Check
+    await prisma.$queryRaw`SELECT 1`;
+    healthChecks.checks.database = 'healthy';
+  } catch (error) {
+    healthChecks.checks.database = 'unhealthy';
+    healthChecks.status = 'unhealthy';
+  }
+
+  try {
+    // Redis-Check
+    await redis.ping();
+    healthChecks.checks.redis = 'healthy';
+  } catch (error) {
+    healthChecks.checks.redis = 'unhealthy';
+    healthChecks.status = 'unhealthy';
+  }
+
+  const statusCode = healthChecks.status === 'healthy' ? 200 : 503;
+  
+  return NextResponse.json(healthChecks, { status: statusCode });
+}
+```
+
+## Docker Environment Templates
+```bash
+# docker/.env.example
+# Datenbank
+DATABASE_URL=postgresql://azubi:password@localhost:5432/azubi_dev
+POSTGRES_DB=azubi_dev
+POSTGRES_USER=azubi
+POSTGRES_PASSWORD=password
+
+# Redis
+REDIS_URL=redis://localhost:6379
+REDIS_PASSWORD=redis_password
+
+# NextAuth
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your-secret-key
+
+# OpenAI
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4
+
+# App
+NODE_ENV=development
+PORT=3000
+```
+
+## Docker Compose Override
+```yaml
+# docker-compose.override.yml
+# Lokale Entwicklung-Überschreibungen
+version: '3.8'
+
+services:
+  app:
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    command: npm run dev
+
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=password
+
+  redis:
+    ports:
+      - "6379:6379"
+```
+description:
+globs:
+alwaysApply: true
+---

@@ -1,0 +1,515 @@
+# KI-Integration und OpenAI-API
+
+## OpenAI-Integration
+- **Custom Base URL**: Unterstützung für lokale oder Proxy-APIs
+- **Environment-Variablen**: Sichere Konfiguration über .env-Dateien
+- **Modell-Auswahl**: Konfigurierbare Modelle (GPT-4, GPT-3.5, Custom)
+- **Rate Limiting**: Schutz vor API-Überschreitungen
+- **Error Handling**: Robuste Fehlerbehandlung für API-Ausfälle
+
+## OpenAI-Konfiguration
+```typescript
+// lib/openai.ts
+import OpenAI from 'openai';
+
+// OpenAI-Client mit custom Base URL konfigurieren
+// Configure OpenAI client with custom base URL
+export const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+  baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+  defaultQuery: { 'api-version': '2024-02-15-preview' },
+  defaultHeaders: { 'api-key': process.env.OPENAI_API_KEY! },
+});
+
+// Modell-Konfiguration
+export const AI_MODELS = {
+  GPT_4: 'gpt-4',
+  GPT_4_TURBO: 'gpt-4-turbo-preview',
+  GPT_3_5_TURBO: 'gpt-3.5-turbo',
+  CUSTOM: process.env.OPENAI_MODEL || 'gpt-4',
+} as const;
+
+// Rate Limiting und Retry-Logik
+export class AIService {
+  private static instance: AIService;
+  private requestCount = 0;
+  private lastReset = Date.now();
+  private readonly MAX_REQUESTS_PER_MINUTE = 60;
+  
+  static getInstance(): AIService {
+    if (!AIService.instance) {
+      AIService.instance = new AIService();
+    }
+    return AIService.instance;
+  }
+  
+  private async checkRateLimit(): Promise<boolean> {
+    const now = Date.now();
+    if (now - this.lastReset >= 60000) { // 1 Minute
+      this.requestCount = 0;
+      this.lastReset = now;
+    }
+    
+    if (this.requestCount >= this.MAX_REQUESTS_PER_MINUTE) {
+      return false;
+    }
+    
+    this.requestCount++;
+    return true;
+  }
+  
+  async generateRecommendations(userData: any): Promise<string[]> {
+    if (!(await this.checkRateLimit())) {
+      throw new Error('Rate limit exceeded. Please try again later.');
+    }
+    
+    try {
+      const prompt = this.buildRecommendationPrompt(userData);
+      
+      const response = await openai.chat.completions.create({
+        model: AI_MODELS.CUSTOM,
+        messages: [
+          {
+            role: 'system',
+            content: 'Du bist ein KI-Assistent für eine Lernplattform. Deine Aufgabe ist es, personalisierte Lernempfehlungen basierend auf dem Benutzerverhalten zu geben.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        max_tokens: 500,
+        temperature: 0.7,
+        top_p: 0.9,
+        frequency_penalty: 0.1,
+        presence_penalty: 0.1
+      });
+      
+      return this.parseRecommendations(response.choices[0].message.content);
+      
+    } catch (error) {
+      console.error('OpenAI API error:', error);
+      throw new Error('Fehler bei der Generierung von Empfehlungen');
+    }
+  }
+  
+  private buildRecommendationPrompt(userData: any): string {
+    const { interests, completedModules, currentLevel, learningStyle } = userData;
+    
+    return `
+    Basierend auf folgenden Benutzerdaten, empfehle 3-5 passende Lernmodule:
+    
+    Interessen: ${interests.join(', ')}
+    Abgeschlossene Module: ${completedModules.length}
+    Aktuelles Level: ${currentLevel}
+    Lernstil: ${learningStyle}
+    
+    Gib nur die Modul-IDs als kommagetrennte Liste zurück, z.B.: "1,3,7"
+    `;
+  }
+  
+  private parseRecommendations(content: string | null): string[] {
+    if (!content) return [];
+    
+    // Extrahiere Modul-IDs aus der Antwort
+    const match = content.match(/\d+(?:,\s*\d+)*/);
+    if (match) {
+      return match[0].split(',').map(id => id.trim());
+    }
+    
+    return [];
+  }
+}
+```
+
+## KI-gestützte Lernempfehlungen
+```typescript
+// services/ai-recommendations.ts
+import { AIService } from '@/lib/openai';
+import { prisma } from '@/lib/prisma';
+import { redis } from '@/lib/redis';
+
+export class AIRecommendationService {
+  private aiService = AIService.getInstance();
+  
+  async getPersonalizedRecommendations(userId: number, limit: number = 5): Promise<any[]> {
+    // Cache-Check
+    const cacheKey = `recommendations:${userId}`;
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+    
+    try {
+      // Benutzer-Daten sammeln
+      const userData = await this.collectUserData(userId);
+      
+      // KI-Empfehlungen generieren
+      const recommendedModuleIds = await this.aiService.generateRecommendations(userData);
+      
+      // Empfohlene Module aus der Datenbank abrufen
+      const recommendations = await this.fetchRecommendedModules(recommendedModuleIds, limit);
+      
+      // Cache setzen (5 Minuten)
+      await redis.setex(cacheKey, 300, JSON.stringify(recommendations));
+      
+      return recommendations;
+      
+    } catch (error) {
+      console.error('AI recommendation error:', error);
+      
+      // Fallback: Beliebte Module basierend auf Interessen
+      return this.getFallbackRecommendations(userId, limit);
+    }
+  }
+  
+  private async collectUserData(userId: number) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        completions: {
+          include: {
+            module: {
+              select: {
+                id: true,
+                title: true,
+                difficulty: true,
+                tags: true
+              }
+            }
+          }
+        },
+        interests: true
+      }
+    });
+    
+    if (!user) throw new Error('Benutzer nicht gefunden');
+    
+    // Lernstil analysieren
+    const learningStyle = this.analyzeLearningStyle(user.completions);
+    
+    // Schwierigkeitsgrad berechnen
+    const currentLevel = this.calculateCurrentLevel(user.completions);
+    
+    return {
+      interests: user.interests,
+      completedModules: user.completions,
+      currentLevel,
+      learningStyle,
+      totalPoints: user.points || 0
+    };
+  }
+  
+  private analyzeLearningStyle(completions: any[]): string {
+    if (completions.length === 0) return 'beginner';
+    
+    const avgTimeSpent = completions.reduce((sum, c) => sum + (c.timeSpent || 0), 0) / completions.length;
+    const avgScore = completions.reduce((sum, c) => sum + (c.score || 0), 0) / completions.length;
+    
+    if (avgTimeSpent > 1800 && avgScore > 80) return 'thorough'; // Gründlich
+    if (avgTimeSpent < 900 && avgScore > 70) return 'fast'; // Schnell
+    if (avgScore < 60) return 'struggling'; // Schwierigkeiten
+    return 'balanced'; // Ausgewogen
+  }
+  
+  private calculateCurrentLevel(completions: any[]): number {
+    if (completions.length === 0) return 1;
+    
+    const totalPoints = completions.reduce((sum, c) => sum + (c.score || 0), 0);
+    const avgScore = totalPoints / completions.length;
+    
+    if (avgScore >= 90) return 3; // Fortgeschritten
+    if (avgScore >= 70) return 2; // Mittel
+    return 1; // Anfänger
+  }
+  
+  private async fetchRecommendedModules(moduleIds: string[], limit: number) {
+    if (moduleIds.length === 0) {
+      return this.getFallbackRecommendations(0, limit);
+    }
+    
+    return await prisma.module.findMany({
+      where: {
+        id: { in: moduleIds.map(id => parseInt(id)) },
+        isActive: true
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        difficulty: true,
+        estimatedTime: true,
+        tags: true
+      },
+      take: limit
+    });
+  }
+  
+  private async getFallbackRecommendations(userId: number, limit: number) {
+    // Fallback: Beliebte Module basierend auf Interessen
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { interests: true }
+    });
+    
+    const interests = user?.interests || [];
+    
+    return await prisma.module.findMany({
+      where: {
+        isActive: true,
+        tags: { hasSome: interests }
+      },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        difficulty: true,
+        estimatedTime: true,
+        tags: true
+      },
+      take: limit,
+      orderBy: [
+        { completions: { _count: 'desc' } },
+        { createdAt: 'desc' }
+      ]
+    });
+  }
+}
+```
+
+## Adaptive Quiz-Generierung
+```typescript
+// services/adaptive-quiz.ts
+import { AIService } from '@/lib/openai';
+import { prisma } from '@/lib/prisma';
+
+export class AdaptiveQuizService {
+  private aiService = AIService.getInstance();
+  
+  async generateAdaptiveQuiz(moduleId: number, userId: number): Promise<any[]> {
+    // Benutzer-Leistung analysieren
+    const userPerformance = await this.analyzeUserPerformance(userId, moduleId);
+    
+    // Quiz-Schwierigkeit anpassen
+    const difficulty = this.calculateAdaptiveDifficulty(userPerformance);
+    
+    // KI-generierte Fragen erstellen
+    const questions = await this.generateQuestions(moduleId, difficulty, userPerformance);
+    
+    return questions;
+  }
+  
+  private async analyzeUserPerformance(userId: number, moduleId: number) {
+    const completions = await prisma.completion.findMany({
+      where: { userId },
+      include: { module: true },
+      orderBy: { completed: 'desc' },
+      take: 10
+    });
+    
+    if (completions.length === 0) {
+      return {
+        averageScore: 0,
+        completionRate: 0,
+        preferredDifficulty: 'BEGINNER',
+        learningSpeed: 'normal'
+      };
+    }
+    
+    const averageScore = completions.reduce((sum, c) => sum + (c.score || 0), 0) / completions.length;
+    const completionRate = completions.filter(c => c.score && c.score >= 70).length / completions.length;
+    
+    return {
+      averageScore,
+      completionRate,
+      preferredDifficulty: this.mapScoreToDifficulty(averageScore),
+      learningSpeed: this.calculateLearningSpeed(completions)
+    };
+  }
+  
+  private mapScoreToDifficulty(score: number): string {
+    if (score >= 85) return 'ADVANCED';
+    if (score >= 70) return 'INTERMEDIATE';
+    return 'BEGINNER';
+  }
+  
+  private calculateLearningSpeed(completions: any[]): string {
+    if (completions.length < 2) return 'normal';
+    
+    const recentCompletions = completions.slice(0, 3);
+    const avgTimeSpent = recentCompletions.reduce((sum, c) => sum + (c.timeSpent || 0), 0) / recentCompletions.length;
+    
+    if (avgTimeSpent < 600) return 'fast'; // Weniger als 10 Minuten
+    if (avgTimeSpent > 1800) return 'slow'; // Mehr als 30 Minuten
+    return 'normal';
+  }
+  
+  private calculateAdaptiveDifficulty(performance: any): string {
+    const { averageScore, completionRate, preferredDifficulty } = performance;
+    
+    // Schwierigkeit basierend auf Leistung anpassen
+    if (averageScore >= 90 && completionRate >= 0.9) {
+      return 'ADVANCED';
+    } else if (averageScore >= 75 && completionRate >= 0.8) {
+      return 'INTERMEDIATE';
+    } else if (averageScore < 60 || completionRate < 0.6) {
+      return 'BEGINNER';
+    }
+    
+    return preferredDifficulty;
+  }
+  
+  private async generateQuestions(moduleId: number, difficulty: string, performance: any) {
+    const module = await prisma.module.findUnique({
+      where: { id: moduleId },
+      select: { title: true, content: true, tags: true }
+    });
+    
+    if (!module) throw new Error('Modul nicht gefunden');
+    
+    const prompt = `
+    Erstelle 5 Quiz-Fragen für das Modul "${module.title}" mit Schwierigkeitsgrad ${difficulty}.
+    
+    Benutzer-Leistung:
+    - Durchschnittsnote: ${performance.averageScore}
+    - Abschlussrate: ${performance.completionRate}
+    - Bevorzugte Schwierigkeit: ${performance.preferredDifficulty}
+    
+    Gib die Fragen im folgenden JSON-Format zurück:
+    [
+      {
+        "question": "Frage hier",
+        "options": ["Option A", "Option B", "Option C", "Option D"],
+        "correctAnswer": "Option A",
+        "explanation": "Erklärung der Antwort",
+        "difficulty": "${difficulty}"
+      }
+    ]
+    `;
+    
+    try {
+      const response = await this.aiService.generateQuestions(prompt);
+      return JSON.parse(response);
+    } catch (error) {
+      console.error('Question generation error:', error);
+      return this.getDefaultQuestions(moduleId, difficulty);
+    }
+  }
+  
+  private async getDefaultQuestions(moduleId: number, difficulty: string) {
+    // Fallback: Vordefinierte Fragen aus der Datenbank
+    return await prisma.quizQuestion.findMany({
+      where: {
+        moduleId,
+        difficulty: difficulty as any,
+        isActive: true
+      },
+      take: 5,
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+}
+```
+
+## Content-Personalization
+```typescript
+// services/content-personalization.ts
+import { AIService } from '@/lib/openai';
+import { prisma } from '@/lib/prisma';
+
+export class ContentPersonalizationService {
+  private aiService = AIService.getInstance();
+  
+  async personalizeContent(content: string, userId: number): Promise<string> {
+    const userProfile = await this.getUserProfile(userId);
+    
+    if (!userProfile) return content;
+    
+    const prompt = `
+    Personalisiere den folgenden Lerninhalt für einen Benutzer mit folgenden Eigenschaften:
+    
+    Lernstil: ${userProfile.learningStyle}
+    Schwierigkeitsgrad: ${userProfile.preferredDifficulty}
+    Interessen: ${userProfile.interests.join(', ')}
+    Vorkenntnisse: ${userProfile.experienceLevel}
+    
+    Inhalt:
+    ${content}
+    
+    Passe den Inhalt an, ohne die Kerninformationen zu verändern. Füge Beispiele hinzu, die zu den Interessen passen.
+    `;
+    
+    try {
+      const response = await this.aiService.personalizeContent(prompt);
+      return response;
+    } catch (error) {
+      console.error('Content personalization error:', error);
+      return content; // Fallback zum ursprünglichen Inhalt
+    }
+  }
+  
+  private async getUserProfile(userId: number) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        completions: {
+          include: { module: true },
+          orderBy: { completed: 'desc' },
+          take: 20
+        }
+      }
+    });
+    
+    if (!user) return null;
+    
+    const learningStyle = this.analyzeLearningStyle(user.completions);
+    const preferredDifficulty = this.calculatePreferredDifficulty(user.completions);
+    const experienceLevel = this.calculateExperienceLevel(user.completions);
+    
+    return {
+      learningStyle,
+      preferredDifficulty,
+      interests: user.interests || [],
+      experienceLevel
+    };
+  }
+  
+  private analyzeLearningStyle(completions: any[]): string {
+    if (completions.length === 0) return 'visual';
+    
+    // Lernstil basierend auf Verhalten analysieren
+    const avgTimeSpent = completions.reduce((sum, c) => sum + (c.timeSpent || 0), 0) / completions.length;
+    const avgScore = completions.reduce((sum, c) => sum + (c.score || 0), 0) / completions.length;
+    
+    if (avgTimeSpent > 1500) return 'thorough'; // Gründlich
+    if (avgScore > 85) return 'fast'; // Schnell und effektiv
+    return 'balanced'; // Ausgewogen
+  }
+  
+  private calculatePreferredDifficulty(completions: any[]): string {
+    if (completions.length === 0) return 'BEGINNER';
+    
+    const recentCompletions = completions.slice(0, 5);
+    const avgScore = recentCompletions.reduce((sum, c) => sum + (c.score || 0), 0) / recentCompletions.length;
+    
+    if (avgScore >= 85) return 'ADVANCED';
+    if (avgScore >= 70) return 'INTERMEDIATE';
+    return 'BEGINNER';
+  }
+  
+  private calculateExperienceLevel(completions: any[]): string {
+    if (completions.length === 0) return 'Anfänger';
+    
+    const totalModules = completions.length;
+    const avgScore = completions.reduce((sum, c) => sum + (c.score || 0), 0) / totalModules;
+    
+    if (totalModules >= 20 && avgScore >= 80) return 'Fortgeschritten';
+    if (totalModules >= 10 && avgScore >= 70) return 'Mittel';
+    return 'Anfänger';
+  }
+}
+```
+description:
+globs:
+alwaysApply: true
+---

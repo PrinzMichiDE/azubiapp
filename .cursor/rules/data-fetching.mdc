@@ -1,0 +1,234 @@
+# Daten-Fetching und State Management
+
+## Daten-Fetching Strategien
+- **React Query/SWR**: Für Server-State-Management und Caching
+- **Server Components**: Next.js 13+ für serverseitige Datenverarbeitung
+- **Client Components**: Für interaktive Komponenten mit Client-State
+- **Hybrid-Ansatz**: Kombination von Server- und Client-Rendering
+
+## React Query Integration
+```typescript
+// Custom Hook für Lernpfad-Daten
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+// Lernpfad abrufen
+export function useLearningPath(pathId: string) {
+  return useQuery({
+    queryKey: ['learningPath', pathId],
+    queryFn: () => fetchLearningPath(pathId),
+    staleTime: 5 * 60 * 1000, // 5 Minuten
+    cacheTime: 10 * 60 * 1000, // 10 Minuten
+  });
+}
+
+// Lernfortschritt aktualisieren
+export function useUpdateProgress() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: updateProgress,
+    onSuccess: (data, variables) => {
+      // Cache invalidieren und aktualisieren
+      // Invalidate and update cache
+      queryClient.invalidateQueries(['userProgress']);
+      queryClient.invalidateQueries(['learningPath', variables.pathId]);
+      
+      // Optimistic Update
+      queryClient.setQueryData(['userProgress'], (old: any) => ({
+        ...old,
+        [variables.pathId]: data.progress,
+      }));
+    },
+  });
+}
+
+// KI-Empfehlungen abrufen
+export function useRecommendations(userId: string) {
+  return useQuery({
+    queryKey: ['recommendations', userId],
+    queryFn: () => fetchRecommendations(userId),
+    enabled: !!userId,
+    refetchInterval: 30 * 60 * 1000, // Alle 30 Minuten
+  });
+}
+```
+
+## Server Components für statische Daten
+```typescript
+// Server Component für Lernpfad-Übersicht
+import { getLearningPaths } from '@/lib/api/learning';
+
+export default async function LearningPathsPage() {
+  // Daten serverseitig laden
+  // Load data server-side
+  const learningPaths = await getLearningPaths();
+  
+  return (
+    <div className="space-y-6">
+      <h1 className="text-3xl font-bold">Lernpfade</h1>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {learningPaths.map((path) => (
+          <LearningPathCard key={path.id} path={path} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Client Component für interaktive Elemente
+'use client';
+
+import { useLearningPath } from '@/hooks/useLearningPath';
+
+export function LearningPathCard({ path }: { path: LearningPath }) {
+  const { data: progress } = useLearningPath(path.id);
+  
+  return (
+    <Card className="hover:shadow-lg transition-shadow">
+      <CardHeader>
+        <CardTitle>{path.title}</CardTitle>
+        <CardDescription>{path.description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Progress value={progress?.percentage || 0} />
+        <p className="text-sm text-muted-foreground mt-2">
+          {progress?.completedModules || 0} von {path.totalModules} Modulen abgeschlossen
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+## Global State Management
+```typescript
+// Context für Benutzer-Daten
+interface UserContextType {
+  user: User | null;
+  updateUser: (user: Partial<User>) => void;
+  logout: () => void;
+}
+
+const UserContext = createContext<UserContextType | undefined>(undefined);
+
+export function UserProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  
+  const updateUser = useCallback((updates: Partial<User>) => {
+    setUser(prev => prev ? { ...prev, ...updates } : null);
+  }, []);
+  
+  const logout = useCallback(() => {
+    setUser(null);
+    // Weitere Logout-Logik hier
+    // Additional logout logic here
+  }, []);
+  
+  return (
+    <UserContext.Provider value={{ user, updateUser, logout }}>
+      {children}
+    </UserContext.Provider>
+  );
+}
+
+// Custom Hook für User-Context
+export function useUser() {
+  const context = useContext(UserContext);
+  if (context === undefined) {
+    throw new Error('useUser must be used within a UserProvider');
+  }
+  return context;
+}
+```
+
+## Optimistic Updates
+```typescript
+// Optimistisches Update für Quiz-Antworten
+export function useSubmitQuizAnswer() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: submitQuizAnswer,
+    onMutate: async (newAnswer) => {
+      // Optimistisches Update
+      // Optimistic update
+      await queryClient.cancelQueries(['quizProgress', newAnswer.quizId]);
+      
+      const previousProgress = queryClient.getQueryData(['quizProgress', newAnswer.quizId]);
+      
+      queryClient.setQueryData(['quizProgress', newAnswer.quizId], (old: any) => ({
+        ...old,
+        answers: [...(old?.answers || []), newAnswer],
+        score: calculateNewScore(old?.score || 0, newAnswer),
+      }));
+      
+      return { previousProgress };
+    },
+    onError: (err, newAnswer, context) => {
+      // Rollback bei Fehler
+      // Rollback on error
+      if (context?.previousProgress) {
+        queryClient.setQueryData(['quizProgress', newAnswer.quizId], context.previousProgress);
+      }
+    },
+    onSettled: (data, error, variables) => {
+      // Cache aktualisieren
+      // Update cache
+      queryClient.invalidateQueries(['quizProgress', variables.quizId]);
+    },
+  });
+}
+```
+
+## Error Handling und Loading States
+```typescript
+// Error Boundary für API-Fehler
+export function ApiErrorBoundary({ children }: { children: React.ReactNode }) {
+  return (
+    <ErrorBoundary
+      fallback={({ error }) => (
+        <div className="p-6 text-center">
+          <h2 className="text-xl font-semibold text-red-600">
+            Ein Fehler ist aufgetreten
+          </h2>
+          <p className="text-gray-600 mt-2">
+            {error.message}
+          </p>
+          <Button 
+            onClick={() => window.location.reload()} 
+            className="mt-4"
+          >
+            Seite neu laden
+          </Button>
+        </div>
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  );
+}
+
+// Skeleton-Loader für bessere UX
+export function LearningPathSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="h-8 bg-gray-200 rounded animate-pulse w-1/3" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <Card key={i} className="p-6">
+            <div className="space-y-3">
+              <div className="h-6 bg-gray-200 rounded animate-pulse" />
+              <div className="h-4 bg-gray-200 rounded animate-pulse w-2/3" />
+              <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2" />
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+description:
+globs:
+alwaysApply: true
+---

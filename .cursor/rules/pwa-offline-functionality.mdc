@@ -1,0 +1,918 @@
+# Progressive Web App (PWA) und Offline-Funktionalität
+
+## PWA-Überblick
+- **Progressive Web App**: App-ähnliche Erfahrung im Browser
+- **Offline-Funktionalität**: Lernen ohne Internetverbindung
+- **Service Worker**: Caching und Offline-Synchronisation
+- **IndexedDB**: Lokale Datenspeicherung
+- **Konfiguration**: Aktivierung über .env-Variablen
+
+## Next.js PWA-Konfiguration
+```typescript
+// next.config.js
+const withPWA = require('next-pwa')({
+  dest: 'public',
+  register: true,
+  skipWaiting: true,
+  disable: process.env.NODE_ENV === 'development',
+  runtimeCaching: [
+    {
+      urlPattern: /^https:\/\/azubi-lxp\.com\/api\/.*$/,
+      handler: 'NetworkFirst',
+      options: {
+        cacheName: 'api-cache',
+        expiration: {
+          maxEntries: 100,
+          maxAgeSeconds: 60 * 60 * 24, // 24 Stunden
+        },
+        cacheableResponse: {
+          statuses: [0, 200],
+        },
+      },
+    },
+    {
+      urlPattern: /^https:\/\/azubi-lxp\.com\/_next\/static\/.*$/,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'static-assets',
+        expiration: {
+          maxEntries: 1000,
+          maxAgeSeconds: 60 * 60 * 24 * 365, // 1 Jahr
+        },
+      },
+    },
+    {
+      urlPattern: /^https:\/\/azubi-lxp\.com\/images\/.*$/,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'images',
+        expiration: {
+          maxEntries: 500,
+          maxAgeSeconds: 60 * 60 * 24 * 30, // 30 Tage
+        },
+      },
+    },
+  ],
+});
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // PWA-Konfiguration
+  ...withPWA({
+    // Experimentelle Features
+    experimental: {
+      typedRoutes: true,
+    },
+    
+    // Bilder-Optimierung
+    images: {
+      domains: ['azubi-lxp.com'],
+      formats: ['image/webp', 'image/avif'],
+    },
+    
+    // Webpack-Konfiguration
+    webpack: (config, { isServer }) => {
+      if (!isServer) {
+        config.resolve.fallback = {
+          ...config.resolve.fallback,
+          fs: false,
+        };
+      }
+      return config;
+    },
+  }),
+};
+
+module.exports = nextConfig;
+```
+
+## PWA-Manifest
+```json
+// public/manifest.json
+{
+  "name": "Azubi LXP - Learning Experience Platform",
+  "short_name": "Azubi LXP",
+  "description": "Moderne Lernplattform für Auszubildende mit Offline-Funktionalität",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "de",
+  "dir": "ltr",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-72x72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-128x128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "Öffne das Dashboard",
+      "url": "/dashboard",
+      "icons": [
+        {
+          "src": "/icons/dashboard-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Lernen",
+      "short_name": "Lernen",
+      "description": "Starte mit dem Lernen",
+      "url": "/learn",
+      "icons": [
+        {
+          "src": "/icons/learn-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshots/dashboard-mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "/screenshots/dashboard-desktop.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ]
+}
+```
+
+## Service Worker
+```typescript
+// public/sw.js
+const CACHE_NAME = 'azubi-lxp-v1';
+const STATIC_CACHE = 'azubi-lxp-static-v1';
+const DYNAMIC_CACHE = 'azubi-lxp-dynamic-v1';
+const API_CACHE = 'azubi-lxp-api-v1';
+
+// Statische Assets für Offline-Funktionalität
+const STATIC_ASSETS = [
+  '/',
+  '/dashboard',
+  '/learn',
+  '/profile',
+  '/offline',
+  '/manifest.json',
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png',
+];
+
+// API-Endpunkte für Offline-Caching
+const API_ENDPOINTS = [
+  '/api/modules',
+  '/api/user/progress',
+  '/api/learning-paths',
+];
+
+// Installation des Service Workers
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(STATIC_CACHE)
+      .then((cache) => {
+        console.log('Service Worker: Caching statische Assets');
+        return cache.addAll(STATIC_ASSETS);
+      })
+      .then(() => {
+        console.log('Service Worker: Installation abgeschlossen');
+        return self.skipWaiting();
+      })
+  );
+});
+
+// Aktivierung des Service Workers
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== STATIC_CACHE && 
+              cacheName !== DYNAMIC_CACHE && 
+              cacheName !== API_CACHE) {
+            console.log('Service Worker: Alte Cache löschen:', cacheName);
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    }).then(() => {
+      console.log('Service Worker: Aktivierung abgeschlossen');
+      return self.clients.claim();
+    })
+  );
+});
+
+// Fetch-Event für Offline-Caching
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  // API-Requests
+  if (API_ENDPOINTS.some(endpoint => url.pathname.startsWith(endpoint))) {
+    event.respondWith(handleApiRequest(request));
+    return;
+  }
+
+  // Statische Assets
+  if (request.method === 'GET' && request.destination !== 'document') {
+    event.respondWith(handleStaticRequest(request));
+    return;
+  }
+
+  // HTML-Seiten
+  if (request.destination === 'document') {
+    event.respondWith(handleDocumentRequest(request));
+    return;
+  }
+});
+
+// API-Request-Handler
+async function handleApiRequest(request) {
+  try {
+    // Versuche zuerst Netzwerk-Request
+    const response = await fetch(request);
+    
+    if (response.ok) {
+      // Cache erfolgreiche API-Responses
+      const cache = await caches.open(API_CACHE);
+      cache.put(request, response.clone());
+      return response;
+    }
+  } catch (error) {
+    console.log('Service Worker: API offline, verwende Cache');
+  }
+
+  // Fallback auf Cache
+  const cachedResponse = await caches.match(request);
+  if (cachedResponse) {
+    return cachedResponse;
+  }
+
+  // Offline-Fallback für API-Requests
+  return new Response(
+    JSON.stringify({ 
+      error: 'Offline', 
+      message: 'Keine Internetverbindung verfügbar' 
+    }),
+    {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'Content-Type': 'application/json' }
+    }
+  );
+}
+
+// Statische Asset-Handler
+async function handleStaticRequest(request) {
+  const cachedResponse = await caches.match(request);
+  if (cachedResponse) {
+    return cachedResponse;
+  }
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(DYNAMIC_CACHE);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch (error) {
+    // Offline-Fallback für statische Assets
+    return new Response('Offline', { status: 503 });
+  }
+}
+
+// Dokument-Request-Handler
+async function handleDocumentRequest(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      return response;
+    }
+  } catch (error) {
+    console.log('Service Worker: Dokument offline, verwende Cache');
+  }
+
+  // Fallback auf Offline-Seite
+  const offlineResponse = await caches.match('/offline');
+  if (offlineResponse) {
+    return offlineResponse;
+  }
+
+  // Einfache Offline-Nachricht
+  return new Response(
+    `
+    <!DOCTYPE html>
+    <html lang="de">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Offline - Azubi LXP</title>
+    </head>
+    <body>
+      <h1>Offline</h1>
+      <p>Keine Internetverbindung verfügbar. Einige Funktionen sind möglicherweise eingeschränkt.</p>
+      <button onclick="window.location.reload()">Erneut versuchen</button>
+    </body>
+    </html>
+    `,
+    {
+      status: 200,
+      headers: { 'Content-Type': 'text/html' }
+    }
+  );
+}
+
+// Background Sync für Offline-Daten
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'background-sync') {
+    event.waitUntil(syncOfflineData());
+  }
+});
+
+// Offline-Daten synchronisieren
+async function syncOfflineData() {
+  try {
+    const db = await openIndexedDB();
+    const offlineData = await db.getAll('offlineActions');
+    
+    for (const data of offlineData) {
+      try {
+        await fetch(data.url, {
+          method: data.method,
+          headers: data.headers,
+          body: data.body,
+        });
+        
+        // Erfolgreich synchronisiert, aus DB entfernen
+        await db.delete('offlineActions', data.id);
+      } catch (error) {
+        console.error('Service Worker: Sync-Fehler:', error);
+      }
+    }
+  } catch (error) {
+    console.error('Service Worker: IndexedDB-Fehler:', error);
+  }
+}
+
+// Push-Benachrichtigungen
+self.addEventListener('push', (event) => {
+  const options = {
+    body: event.data ? event.data.text() : 'Neue Benachrichtigung von Azubi LXP',
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/badge-72x72.png',
+    vibrate: [100, 50, 100],
+    data: {
+      dateOfArrival: Date.now(),
+      primaryKey: 1
+    },
+    actions: [
+      {
+        action: 'explore',
+        title: 'Öffnen',
+        icon: '/icons/icon-192x192.png'
+      },
+      {
+        action: 'close',
+        title: 'Schließen',
+        icon: '/icons/icon-192x192.png'
+      }
+    ]
+  };
+
+  event.waitUntil(
+    self.registration.showNotification('Azubi LXP', options)
+  );
+});
+
+// Benachrichtigungs-Clicks
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  if (event.action === 'explore') {
+    event.waitUntil(
+      clients.openWindow('/')
+    );
+  }
+});
+```
+
+## Offline-Datenverwaltung
+```typescript
+// lib/offline-storage.ts
+export interface OfflineAction {
+  id: string;
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: string;
+  timestamp: number;
+  retryCount: number;
+}
+
+export interface OfflineModule {
+  id: string;
+  title: string;
+  content: string;
+  type: 'text' | 'video' | 'quiz';
+  lastUpdated: number;
+  size: number;
+}
+
+export interface OfflineProgress {
+  moduleId: string;
+  userId: string;
+  progress: number;
+  completed: boolean;
+  timestamp: number;
+}
+
+// IndexedDB für Offline-Daten
+class OfflineStorage {
+  private db: IDBDatabase | null = null;
+  private readonly DB_NAME = 'AzubiLXPOffline';
+  private readonly DB_VERSION = 1;
+
+  async init(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
+
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        this.db = request.result;
+        resolve();
+      };
+
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+
+        // Offline-Aktionen Store
+        if (!db.objectStoreNames.contains('offlineActions')) {
+          const actionsStore = db.createObjectStore('offlineActions', { keyPath: 'id' });
+          actionsStore.createIndex('timestamp', 'timestamp', { unique: false });
+        }
+
+        // Offline-Module Store
+        if (!db.objectStoreNames.contains('offlineModules')) {
+          const modulesStore = db.createObjectStore('offlineModules', { keyPath: 'id' });
+          modulesStore.createIndex('lastUpdated', 'lastUpdated', { unique: false });
+          modulesStore.createIndex('type', 'type', { unique: false });
+        }
+
+        // Offline-Fortschritt Store
+        if (!db.objectStoreNames.contains('offlineProgress')) {
+          const progressStore = db.createObjectStore('offlineProgress', { keyPath: 'id' });
+          progressStore.createIndex('userId', 'userId', { unique: false });
+          progressStore.createIndex('moduleId', 'moduleId', { unique: false });
+        }
+      };
+    });
+  }
+
+  // Offline-Aktion speichern
+  async saveOfflineAction(action: OfflineAction): Promise<void> {
+    if (!this.db) throw new Error('IndexedDB nicht initialisiert');
+
+    const transaction = this.db.transaction(['offlineActions'], 'readwrite');
+    const store = transaction.objectStore('offlineActions');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.add(action);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Offline-Aktionen abrufen
+  async getOfflineActions(): Promise<OfflineAction[]> {
+    if (!this.db) throw new Error('IndexedDB nicht initialisiert');
+
+    const transaction = this.db.transaction(['offlineActions'], 'readonly');
+    const store = transaction.objectStore('offlineActions');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Offline-Aktion löschen
+  async deleteOfflineAction(id: string): Promise<void> {
+    if (!this.db) throw new Error('IndexedDB nicht initialisiert');
+
+    const transaction = this.db.transaction(['offlineActions'], 'readwrite');
+    const store = transaction.objectStore('offlineActions');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Offline-Modul speichern
+  async saveOfflineModule(module: OfflineModule): Promise<void> {
+    if (!this.db) throw new Error('IndexedDB nicht initialisiert');
+
+    const transaction = this.db.transaction(['offlineModules'], 'readwrite');
+    const store = transaction.objectStore('offlineModules');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.put(module);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Offline-Module abrufen
+  async getOfflineModules(): Promise<OfflineModule[]> {
+    if (!this.db) throw new Error('IndexedDB nicht initialisiert');
+
+    const transaction = this.db.transaction(['offlineModules'], 'readonly');
+    const store = transaction.objectStore('offlineModules');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Offline-Modul nach ID abrufen
+  async getOfflineModule(id: string): Promise<OfflineModule | undefined> {
+    if (!this.db) throw new Error('IndexedDB nicht initialisiert');
+
+    const transaction = this.db.transaction(['offlineModules'], 'readonly');
+    const store = transaction.objectStore('offlineModules');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Offline-Fortschritt speichern
+  async saveOfflineProgress(progress: OfflineProgress): Promise<void> {
+    if (!this.db) throw new Error('IndexedDB nicht initialisiert');
+
+    const transaction = this.db.transaction(['offlineProgress'], 'readwrite');
+    const store = transaction.objectStore('offlineProgress');
+    
+    return new Promise((resolve, reject) => {
+      const request = store.put(progress);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Offline-Fortschritt abrufen
+  async getOfflineProgress(userId: string): Promise<OfflineProgress[]> {
+    if (!this.db) throw new Error('IndexedDB nicht initialisiert');
+
+    const transaction = this.db.transaction(['offlineProgress'], 'readonly');
+    const store = transaction.objectStore('offlineProgress');
+    const index = store.index('userId');
+    
+    return new Promise((resolve, reject) => {
+      const request = index.getAll(userId);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // Speicherplatz bereinigen
+  async cleanupStorage(maxSize: number = 100 * 1024 * 1024): Promise<void> {
+    if (!this.db) throw new Error('IndexedDB nicht initialisiert');
+
+    const modules = await this.getOfflineModules();
+    const totalSize = modules.reduce((sum, module) => sum + module.size, 0);
+
+    if (totalSize > maxSize) {
+      // Älteste Module zuerst löschen
+      const sortedModules = modules.sort((a, b) => a.lastUpdated - b.lastUpdated);
+      const transaction = this.db.transaction(['offlineModules'], 'readwrite');
+      const store = transaction.objectStore('offlineModules');
+
+      for (const module of sortedModules) {
+        if (totalSize <= maxSize) break;
+        
+        await new Promise<void>((resolve, reject) => {
+          const request = store.delete(module.id);
+          request.onsuccess = () => {
+            totalSize -= module.size;
+            resolve();
+          };
+          request.onerror = () => reject(request.error);
+        });
+      }
+    }
+  }
+}
+
+export const offlineStorage = new OfflineStorage();
+```
+
+## Offline-Status-Hook
+```typescript
+// hooks/use-offline-status.ts
+'use client';
+
+import { useState, useEffect } from 'react';
+
+export interface OfflineStatus {
+  isOnline: boolean;
+  isOffline: boolean;
+  connectionType?: 'wifi' | 'cellular' | 'none';
+  effectiveType?: 'slow-2g' | '2g' | '3g' | '4g';
+  downlink?: number;
+  rtt?: number;
+}
+
+export function useOfflineStatus(): OfflineStatus {
+  const [status, setStatus] = useState<OfflineStatus>({
+    isOnline: navigator.onLine,
+    isOffline: !navigator.onLine,
+  });
+
+  useEffect(() => {
+    const updateOnlineStatus = () => {
+      setStatus(prev => ({
+        ...prev,
+        isOnline: navigator.onLine,
+        isOffline: !navigator.onLine,
+      }));
+    };
+
+    const updateConnectionInfo = () => {
+      if ('connection' in navigator) {
+        const connection = (navigator as any).connection;
+        setStatus(prev => ({
+          ...prev,
+          connectionType: connection.effectiveType,
+          effectiveType: connection.effectiveType,
+          downlink: connection.downlink,
+          rtt: connection.rtt,
+        }));
+      }
+    };
+
+    // Event-Listener für Online/Offline-Status
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+
+    // Event-Listener für Verbindungsänderungen
+    if ('connection' in navigator) {
+      const connection = (navigator as any).connection;
+      connection.addEventListener('change', updateConnectionInfo);
+    }
+
+    // Initialer Status
+    updateConnectionInfo();
+
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+      
+      if ('connection' in navigator) {
+        const connection = (navigator as any).connection;
+        connection.removeEventListener('change', updateConnectionInfo);
+      }
+    };
+  }, []);
+
+  return status;
+}
+```
+
+## Offline-UI-Komponenten
+```typescript
+// components/ui/offline-indicator.tsx
+'use client';
+
+import { useOfflineStatus } from '@/hooks/use-offline-status';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Icons } from '@/components/ui/icons';
+
+export function OfflineIndicator() {
+  const { isOffline, connectionType, effectiveType } = useOfflineStatus();
+
+  if (!isOffline) return null;
+
+  return (
+    <Alert className="border-yellow-200 bg-yellow-50 text-yellow-800">
+      <Icons.wifi className="h-4 w-4" />
+      <AlertDescription>
+        Sie sind offline. Einige Funktionen sind möglicherweise eingeschränkt.
+        {connectionType && ` Verbindungstyp: ${connectionType}`}
+        {effectiveType && ` Geschwindigkeit: ${effectiveType}`}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+// components/ui/offline-content-warning.tsx
+'use client';
+
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Icons } from '@/components/ui/icons';
+
+interface OfflineContentWarningProps {
+  isOffline: boolean;
+  hasOfflineVersion: boolean;
+}
+
+export function OfflineContentWarning({ isOffline, hasOfflineVersion }: OfflineContentWarningProps) {
+  if (!isOffline) return null;
+
+  if (hasOfflineVersion) {
+    return (
+      <Alert className="border-blue-200 bg-blue-50 text-blue-800">
+        <Icons.download className="h-4 w-4" />
+        <AlertDescription>
+          Sie sind offline, aber eine lokale Version dieses Inhalts ist verfügbar.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <Alert className="border-red-200 bg-red-50 text-red-800">
+      <Icons.alertCircle className="h-4 w-4" />
+      <AlertDescription>
+        Dieser Inhalt ist offline nicht verfügbar. Bitte stellen Sie eine Internetverbindung her.
+      </AlertDescription>
+    </Alert>
+  );
+}
+```
+
+## PWA-Installation
+```typescript
+// components/ui/pwa-install-prompt.tsx
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Icons } from '@/components/ui/icons';
+
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
+export function PWAInstallPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showPrompt, setShowPrompt] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      setShowPrompt(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    if (!deferredPrompt) return;
+
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    
+    if (outcome === 'accepted') {
+      console.log('PWA installiert');
+    }
+    
+    setDeferredPrompt(null);
+    setShowPrompt(false);
+  };
+
+  const handleDismiss = () => {
+    setShowPrompt(false);
+  };
+
+  if (!showPrompt) return null;
+
+  return (
+    <Card className="fixed bottom-4 right-4 w-80 z-50 shadow-lg">
+      <CardHeader>
+        <CardTitle className="flex items-center space-x-2">
+          <Icons.download className="h-5 w-5" />
+          <span>App installieren</span>
+        </CardTitle>
+        <CardDescription>
+          Installieren Sie Azubi LXP als App für eine bessere Erfahrung
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex space-x-2">
+          <Button onClick={handleInstall} className="flex-1">
+            Installieren
+          </Button>
+          <Button variant="outline" onClick={handleDismiss}>
+            Später
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+## Umgebungsvariablen für PWA
+```bash
+# .env
+# ========================================
+# PROGRESSIVE WEB APP (PWA)
+# ========================================
+PWA_ENABLED=true
+PWA_NAME="Azubi LXP"
+PWA_SHORT_NAME="Azubi LXP"
+PWA_DESCRIPTION="Moderne Lernplattform für Auszubildende"
+PWA_THEME_COLOR="#3b82f6"
+PWA_BACKGROUND_COLOR="#ffffff"
+PWA_DISPLAY="standalone"
+PWA_ORIENTATION="portrait-primary"
+
+# PWA-Feature-Flags
+PWA_OFFLINE_FUNCTIONALITY=true
+PWA_BACKGROUND_SYNC=true
+PWA_PUSH_NOTIFICATIONS=true
+PWA_INSTALL_PROMPT=true
+PWA_OFFLINE_MODULES=true
+PWA_OFFLINE_PROGRESS=true
+
+# Offline-Caching
+OFFLINE_CACHE_SIZE=100MB
+OFFLINE_MODULE_CACHE_SIZE=50MB
+OFFLINE_PROGRESS_CACHE_SIZE=10MB
+OFFLINE_API_CACHE_SIZE=40MB
+```
+description:
+globs:
+alwaysApply: true
+---

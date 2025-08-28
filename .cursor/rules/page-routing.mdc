@@ -1,0 +1,197 @@
+# Seitenstruktur und Routing mit Next.js App Router
+
+## App Router Struktur
+```
+app/
+├── (auth)/                 # Authentifizierung (Route Groups)
+│   ├── login/
+│   │   └── page.tsx       # Login-Seite
+│   ├── register/
+│   │   └── page.tsx       # Registrierung
+│   └── layout.tsx         # Auth-Layout
+├── (dashboard)/            # Dashboard-Bereiche
+│   ├── dashboard/
+│   │   └── page.tsx       # Azubi-Dashboard
+│   ├── learn/
+│   │   ├── page.tsx       # Lernpfad-Übersicht
+│   │   └── [pathId]/
+│   │       └── page.tsx   # Dynamische Lernpfad-Seite
+│   └── layout.tsx         # Dashboard-Layout mit Sidebar
+├── (admin)/                # Admin-Bereich
+│   ├── admin/
+│   │   ├── dashboard/
+│   │   │   └── page.tsx   # Admin-Dashboard
+│   │   ├── cms/
+│   │   │   └── page.tsx   # Content-Management
+│   │   └── users/
+│   │       └── page.tsx   # Benutzer-Verwaltung
+│   └── layout.tsx         # Admin-Layout mit Top-Bar
+├── (community)/            # Community-Features
+│   ├── community/
+│   │   ├── forums/
+│   │   │   └── page.tsx   # Diskussionsforen
+│   │   ├── groups/
+│   │   │   └── page.tsx   # Projektgruppen
+│   │   └── content/
+│   │       └── page.tsx   # User-generated Content
+│   └── layout.tsx         # Community-Layout
+├── api/                    # API-Routen
+│   ├── auth/
+│   ├── users/
+│   ├── learning/
+│   ├── analytics/
+│   ├── content/
+│   └── hr/
+├── globals.css             # Globale Styles
+├── layout.tsx              # Root-Layout
+└── page.tsx                # Homepage
+```
+
+## Layout-Hierarchie
+```typescript
+// Root-Layout (app/layout.tsx)
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="de">
+      <body className="antialiased">
+        <Providers>
+          <ThemeProvider>
+            {children}
+          </ThemeProvider>
+        </Providers>
+      </body>
+    </html>
+  );
+}
+
+// Dashboard-Layout (app/(dashboard)/layout.tsx)
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-screen">
+      <Sidebar />
+      <main className="flex-1 overflow-auto">
+        <Header />
+        <div className="p-6">
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// Admin-Layout (app/(admin)/layout.tsx)
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <TopBar />
+      <div className="flex">
+        <AdminSidebar />
+        <main className="flex-1 p-6">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
+```
+
+## Dynamische Routen
+```typescript
+// Lernpfad-Seite (app/(dashboard)/learn/[pathId]/page.tsx)
+interface LearningPathPageProps {
+  params: {
+    pathId: string;
+  };
+  searchParams: {
+    module?: string;
+    tab?: string;
+  };
+}
+
+export default async function LearningPathPage({ params, searchParams }: LearningPathPageProps) {
+  const { pathId } = params;
+  const { module, tab } = searchParams;
+  
+  // Lernpfad-Daten laden
+  // Load learning path data
+  const learningPath = await getLearningPath(pathId);
+  
+  return (
+    <div className="space-y-6">
+      <LearningPathHeader path={learningPath} />
+      <LearningPathContent 
+        path={learningPath} 
+        activeModule={module}
+        activeTab={tab}
+      />
+    </div>
+  );
+}
+```
+
+## Route Groups und Organisation
+- **Route Groups**: Klammern `()` für logische Gruppierung ohne URL-Änderung
+- **Parallel Routes**: Für komplexe Layouts mit mehreren Inhalten
+- **Intercepting Routes**: Für Modal-ähnliche Erfahrungen
+- **Loading States**: `loading.tsx` für Suspense-Boundaries
+- **Error Handling**: `error.tsx` für Error-Boundaries
+
+## Navigation und Links
+```typescript
+// Navigation-Komponente
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+
+export function Navigation() {
+  const pathname = usePathname();
+  
+  const navItems = [
+    { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
+    { href: '/learn', label: 'Lernpfade', icon: BookOpenIcon },
+    { href: '/community', label: 'Community', icon: UsersIcon },
+    { href: '/profile', label: 'Profil', icon: UserIcon },
+  ];
+  
+  return (
+    <nav className="space-y-2">
+      {navItems.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          className={cn(
+            "flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors",
+            pathname === item.href
+              ? "bg-primary text-primary-foreground"
+              : "hover:bg-muted"
+          )}
+        >
+          <item.icon className="h-5 w-5" />
+          <span>{item.label}</span>
+        </Link>
+      ))}
+    </nav>
+  );
+}
+```
+
+## SEO und Meta-Daten
+```typescript
+// Metadata für Lernpfad-Seiten
+export async function generateMetadata({ params }: { params: { pathId: string } }) {
+  const learningPath = await getLearningPath(params.pathId);
+  
+  return {
+    title: `${learningPath.title} - Azubi LXP`,
+    description: learningPath.description,
+    openGraph: {
+      title: learningPath.title,
+      description: learningPath.description,
+      images: [learningPath.thumbnail],
+    },
+  };
+}
+```
+description:
+globs:
+alwaysApply: true
+---
