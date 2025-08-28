@@ -2,155 +2,154 @@
 
 import { useState, useEffect } from 'react'
 import { useTranslations } from 'next-intl'
-import { 
-  PlusIcon, 
-  FunnelIcon, 
+import { useAuth, withAuth } from '@/contexts/AuthContext'
+import { projectAPI, handleApiError } from '@/lib/api'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import Link from 'next/link'
+import {
+  FolderIcon,
+  PlusIcon,
   MagnifyingGlassIcon,
-  CalendarIcon,
+  EyeIcon,
+  PencilIcon,
+  TrashIcon,
   UserGroupIcon,
   ClockIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon
+  CalendarIcon,
+  ChartBarIcon,
+  ExclamationTriangleIcon,
+  ArrowPathIcon,
+  FunnelIcon
 } from '@heroicons/react/24/outline'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
-// Projekt-Interface
 interface Project {
   id: string
   name: string
-  description: string
-  status: string
-  priority: string
-  startDate: string
-  endDate: string
-  budget: number
-  clientName: string
-  progress: number
-  members: number
-  tasks: number
-  timeEntries: number
+  description?: string
+  status: 'ACTIVE' | 'COMPLETED' | 'ON_HOLD' | 'CANCELLED'
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
+  startDate?: string
+  endDate?: string
+  budget?: number
+  clientName?: string
+  createdAt: string
+  updatedAt: string
+  
+  _count: {
+    tasks: number
+    members: number
+    timeEntries: number
+  }
 }
 
-// Projekte-Seite
-export default function ProjectsPage() {
-  const t = useTranslations('projects')
+interface ProjectStats {
+  total: number
+  active: number
+  completed: number
+  onHold: number
+  cancelled: number
+  overdue: number
+}
+
+function ProjectsPage() {
+  const t = useTranslations()
+  const { user } = useAuth()
+  
   const [projects, setProjects] = useState<Project[]>([])
+  const [stats, setStats] = useState<ProjectStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  
+  // Filter und Suche
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [priorityFilter, setPriorityFilter] = useState('')
+  const [filterStatus, setFilterStatus] = useState<string>('ALL')
+  const [filterPriority, setFilterPriority] = useState<string>('ALL')
+  const [sortBy, setSortBy] = useState<string>('updatedAt')
+  const [sortOrder, setSortOrder] = useState<string>('desc')
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
 
-  // Mock-Daten laden (später durch echte API-Aufrufe ersetzen)
   useEffect(() => {
-    const loadProjects = async () => {
-      try {
-        // Simuliere API-Aufruf
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        
-        setProjects([
-          {
-            id: '1',
-            name: 'Website-Redesign',
-            description: 'Komplettes Redesign der Unternehmenswebsite mit modernem Design und verbesserter Benutzerfreundlichkeit.',
-            status: 'ACTIVE',
-            priority: 'HIGH',
-            startDate: '2024-01-15',
-            endDate: '2024-03-15',
-            budget: 15000,
-            clientName: 'TechCorp GmbH',
-            progress: 75,
-            members: 4,
-            tasks: 12,
-            timeEntries: 45,
-          },
-          {
-            id: '2',
-            name: 'Mobile App Entwicklung',
-            description: 'Entwicklung einer iOS und Android App für das Kundenmanagement-System.',
-            status: 'ACTIVE',
-            priority: 'MEDIUM',
-            startDate: '2024-02-01',
-            endDate: '2024-05-01',
-            budget: 25000,
-            clientName: 'Innovate Solutions',
-            progress: 45,
-            members: 6,
-            tasks: 18,
-            timeEntries: 67,
-          },
-          {
-            id: '3',
-            name: 'Datenbank-Migration',
-            description: 'Migration der bestehenden Datenbank auf eine moderne Cloud-Lösung.',
-            status: 'ON_HOLD',
-            priority: 'LOW',
-            startDate: '2024-01-01',
-            endDate: '2024-02-28',
-            budget: 8000,
-            clientName: 'DataFlow Inc.',
-            progress: 20,
-            members: 2,
-            tasks: 8,
-            timeEntries: 23,
-          },
-          {
-            id: '4',
-            name: 'E-Commerce Plattform',
-            description: 'Entwicklung einer vollständigen E-Commerce-Lösung mit Zahlungsabwicklung.',
-            status: 'COMPLETED',
-            priority: 'HIGH',
-            startDate: '2023-10-01',
-            endDate: '2024-01-15',
-            budget: 30000,
-            clientName: 'ShopDirect',
-            progress: 100,
-            members: 8,
-            tasks: 25,
-            timeEntries: 120,
-          },
-        ])
-      } catch (error) {
-        console.error('Fehler beim Laden der Projekte:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
     loadProjects()
-  }, [])
+  }, [searchTerm, filterStatus, filterPriority, sortBy, sortOrder])
 
-  // Gefilterte Projekte
-  const filteredProjects = projects.filter(project => {
-    const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         project.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         project.clientName.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = !statusFilter || project.status === statusFilter
-    const matchesPriority = !priorityFilter || project.priority === priorityFilter
-    
-    return matchesSearch && matchesStatus && matchesPriority
-  })
+  const loadProjects = async () => {
+    try {
+      setLoading(true)
+      setError(null)
 
-  // Status-Farbe
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'ACTIVE': return 'text-green-600 bg-green-100'
-      case 'COMPLETED': return 'text-blue-600 bg-blue-100'
-      case 'ON_HOLD': return 'text-yellow-600 bg-yellow-100'
-      case 'CANCELLED': return 'text-red-600 bg-red-100'
-      default: return 'text-gray-600 bg-gray-100'
+      const params = {
+        ...(searchTerm && { search: searchTerm }),
+        ...(filterStatus !== 'ALL' && { status: filterStatus }),
+        ...(filterPriority !== 'ALL' && { priority: filterPriority }),
+        page: 1,
+        limit: 50,
+        sortBy,
+        sortOrder
+      }
+
+      const response = await projectAPI.getAll(params)
+      setProjects(response.projects || [])
+
+      // Statistiken berechnen
+      const projectStats: ProjectStats = {
+        total: response.projects?.length || 0,
+        active: response.projects?.filter((p: Project) => p.status === 'ACTIVE').length || 0,
+        completed: response.projects?.filter((p: Project) => p.status === 'COMPLETED').length || 0,
+        onHold: response.projects?.filter((p: Project) => p.status === 'ON_HOLD').length || 0,
+        cancelled: response.projects?.filter((p: Project) => p.status === 'CANCELLED').length || 0,
+        overdue: response.projects?.filter((p: Project) => 
+          p.endDate && new Date(p.endDate) < new Date() && p.status === 'ACTIVE'
+        ).length || 0,
+      }
+
+      setStats(projectStats)
+
+    } catch (err) {
+      console.error('Fehler beim Laden der Projekte:', err)
+      setError(handleApiError(err))
+    } finally {
+      setLoading(false)
     }
   }
 
-  // Prioritäts-Farbe
+  const refreshData = async () => {
+    setRefreshing(true)
+    await loadProjects()
+    setRefreshing(false)
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'ACTIVE': return 'text-green-600 bg-green-100 dark:bg-green-900/20'
+      case 'COMPLETED': return 'text-blue-600 bg-blue-100 dark:bg-blue-900/20'
+      case 'ON_HOLD': return 'text-yellow-600 bg-yellow-100 dark:bg-yellow-900/20'
+      case 'CANCELLED': return 'text-red-600 bg-red-100 dark:bg-red-900/20'
+      default: return 'text-gray-600 bg-gray-100 dark:bg-gray-800'
+    }
+  }
+
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'URGENT': return 'text-red-600 bg-red-100'
-      case 'HIGH': return 'text-orange-600 bg-orange-100'
-      case 'MEDIUM': return 'text-yellow-600 bg-yellow-100'
-      case 'LOW': return 'text-green-600 bg-green-100'
-      default: return 'text-gray-600 bg-gray-100'
+      case 'LOW': return 'text-green-600 bg-green-100 dark:bg-green-900/20'
+      case 'MEDIUM': return 'text-blue-600 bg-blue-100 dark:bg-blue-900/20'
+      case 'HIGH': return 'text-orange-600 bg-orange-100 dark:bg-orange-900/20'
+      case 'URGENT': return 'text-red-600 bg-red-100 dark:bg-red-900/20'
+      default: return 'text-gray-600 bg-gray-100 dark:bg-gray-800'
     }
+  }
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    })
+  }
+
+  const isOverdue = (endDate: string) => {
+    return new Date(endDate) < new Date()
   }
 
   if (loading) {
@@ -169,171 +168,377 @@ export default function ProjectsPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                {t('projects')}
+                Projekte
               </h1>
               <p className="mt-2 text-gray-600 dark:text-gray-400">
                 Verwalten Sie alle Ihre Projekte an einem Ort
               </p>
             </div>
-            <Button>
-              <PlusIcon className="h-5 w-5 mr-2" />
-              {t('newProject')}
-            </Button>
+            <div className="flex items-center space-x-3">
+              <Button
+                onClick={refreshData}
+                disabled={refreshing}
+                variant="outline"
+              >
+                <ArrowPathIcon className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                Aktualisieren
+              </Button>
+              <Button>
+                <PlusIcon className="h-4 w-4 mr-2" />
+                Neues Projekt
+              </Button>
+            </div>
           </div>
         </div>
 
-        {/* Filter und Suche */}
-        <Card className="mb-8">
-          <CardContent className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {/* Suchfeld */}
-              <div className="relative">
-                <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Projekte durchsuchen..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-                />
-              </div>
-
-              {/* Status-Filter */}
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-              >
-                <option value="">Alle Status</option>
-                <option value="ACTIVE">Aktiv</option>
-                <option value="COMPLETED">Abgeschlossen</option>
-                <option value="ON_HOLD">Pausiert</option>
-                <option value="CANCELLED">Abgebrochen</option>
-              </select>
-
-              {/* Prioritäts-Filter */}
-              <select
-                value={priorityFilter}
-                onChange={(e) => setPriorityFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-600 dark:text-white"
-              >
-                <option value="">Alle Prioritäten</option>
-                <option value="LOW">Niedrig</option>
-                <option value="MEDIUM">Mittel</option>
-                <option value="HIGH">Hoch</option>
-                <option value="URGENT">Dringend</option>
-              </select>
-
-              {/* Filter-Button */}
-              <Button variant="outline" className="flex items-center justify-center">
-                <FunnelIcon className="h-5 w-5 mr-2" />
-                Filter anwenden
-              </Button>
+        {/* Fehleranzeige */}
+        {error && (
+          <div className="mb-8 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <div className="flex items-center">
+              <ExclamationTriangleIcon className="h-5 w-5 text-red-400 mr-2" />
+              <span className="text-sm text-red-800 dark:text-red-200">{error}</span>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        )}
 
-        {/* Projekte-Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-          {filteredProjects.map((project) => (
-            <Card key={project.id} className="hover:shadow-lg transition-shadow duration-200">
-              <CardHeader className="pb-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                      {project.name}
-                    </CardTitle>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-                      {project.description}
+        {/* Statistiken */}
+        {stats && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center">
+                  <FolderIcon className="h-8 w-8 text-blue-600 mr-3" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                      Gesamt
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {stats.total}
+                    </p>
+                    <p className="text-xs text-blue-600">
+                      Alle Projekte
                     </p>
                   </div>
                 </div>
-              </CardHeader>
-              
-              <CardContent className="space-y-4">
-                {/* Status und Priorität */}
-                <div className="flex items-center space-x-2">
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(project.status)}`}>
-                    {t(project.status.toLowerCase())}
-                  </span>
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${getPriorityColor(project.priority)}`}>
-                    {t(project.priority.toLowerCase())}
-                  </span>
-                </div>
+              </CardContent>
+            </Card>
 
-                {/* Projekt-Details */}
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="flex items-center text-gray-600 dark:text-gray-400">
-                    <CalendarIcon className="h-4 w-4 mr-2" />
-                    <span>{new Date(project.startDate).toLocaleDateString()}</span>
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center">
+                  <ChartBarIcon className="h-8 w-8 text-green-600 mr-3" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                      Aktiv
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {stats.active}
+                    </p>
+                    <p className="text-xs text-green-600">
+                      In Bearbeitung
+                    </p>
                   </div>
-                  <div className="flex items-center text-gray-600 dark:text-gray-400">
-                    <UserGroupIcon className="h-4 w-4 mr-2" />
-                    <span>{project.members} Mitglieder</span>
-                  </div>
-                  <div className="flex items-center text-gray-600 dark:text-gray-400">
-                    <CheckCircleIcon className="h-4 w-4 mr-2" />
-                    <span>{project.tasks} Aufgaben</span>
-                  </div>
-                  <div className="flex items-center text-gray-600 dark:text-gray-400">
-                    <ClockIcon className="h-4 w-4 mr-2" />
-                    <span>{project.timeEntries} Zeiterfassungen</span>
-                  </div>
-                </div>
-
-                {/* Fortschritt */}
-                <div>
-                  <div className="flex items-center justify-between text-sm mb-2">
-                    <span className="text-gray-600 dark:text-gray-400">Fortschritt</span>
-                    <span className="font-medium">{project.progress}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                    <div 
-                      className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${project.progress}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* Budget und Kunde */}
-                <div className="flex items-center justify-between text-sm">
-                  <div className="text-gray-600 dark:text-gray-400">
-                    <span className="font-medium">€{project.budget.toLocaleString()}</span>
-                  </div>
-                  <div className="text-gray-600 dark:text-gray-400">
-                    {project.clientName}
-                  </div>
-                </div>
-
-                {/* Aktionen */}
-                <div className="flex space-x-2 pt-2">
-                  <Button variant="outline" size="sm" className="flex-1">
-                    Bearbeiten
-                  </Button>
-                  <Button variant="outline" size="sm" className="flex-1">
-                    Details
-                  </Button>
                 </div>
               </CardContent>
             </Card>
-          ))}
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center">
+                  <ClockIcon className="h-8 w-8 text-purple-600 mr-3" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                      Abgeschlossen
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {stats.completed}
+                    </p>
+                    <p className="text-xs text-purple-600">
+                      Erfolgreich
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center">
+                  <ExclamationTriangleIcon className="h-8 w-8 text-red-600 mr-3" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                      Überfällig
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                      {stats.overdue}
+                    </p>
+                    <p className="text-xs text-red-600">
+                      Aktion erforderlich
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Filter und Suche */}
+        <div className="mb-6">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Suche */}
+            <div className="flex-1 min-w-64">
+              <div className="relative">
+                <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Projekte suchen..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            {/* Filter */}
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            >
+              <option value="ALL">Alle Status</option>
+              <option value="ACTIVE">Aktiv</option>
+              <option value="COMPLETED">Abgeschlossen</option>
+              <option value="ON_HOLD">Pausiert</option>
+              <option value="CANCELLED">Abgebrochen</option>
+            </select>
+
+            <select
+              value={filterPriority}
+              onChange={(e) => setFilterPriority(e.target.value)}
+              className="border border-gray-300 dark:border-gray-600 rounded-md px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+            >
+              <option value="ALL">Alle Prioritäten</option>
+              <option value="URGENT">Dringend</option>
+              <option value="HIGH">Hoch</option>
+              <option value="MEDIUM">Mittel</option>
+              <option value="LOW">Niedrig</option>
+            </select>
+
+            {/* View Mode Toggle */}
+            <div className="flex border border-gray-300 dark:border-gray-600 rounded-md">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-2 text-sm ${
+                  viewMode === 'grid'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                }`}
+              >
+                Raster
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-2 text-sm ${
+                  viewMode === 'list'
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                }`}
+              >
+                Liste
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* Keine Projekte gefunden */}
-        {filteredProjects.length === 0 && (
-          <Card className="text-center py-12">
-            <CardContent>
-              <ExclamationTriangleIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                Keine Projekte gefunden
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400">
-                Versuchen Sie, Ihre Suchkriterien zu ändern oder erstellen Sie ein neues Projekt.
-              </p>
+        {/* Projekt-Liste */}
+        {viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {projects.map((project) => (
+              <Card key={project.id} className="hover:shadow-lg transition-shadow">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(project.status)}`}>
+                          {project.status.replace('_', ' ')}
+                        </span>
+                        <span className={`px-2 py-1 text-xs rounded-full ${getPriorityColor(project.priority)}`}>
+                          {project.priority}
+                        </span>
+                        {project.endDate && isOverdue(project.endDate) && project.status === 'ACTIVE' && (
+                          <span className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900/20 text-red-600 rounded-full">
+                            Überfällig
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white truncate">
+                        {project.name}
+                      </h3>
+                      {project.description && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mt-1">
+                          {project.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+                
+                <CardContent className="pt-0">
+                  <div className="space-y-3">
+                    {project.clientName && (
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        <strong>Kunde:</strong> {project.clientName}
+                      </p>
+                    )}
+                    
+                    {project.endDate && (
+                      <p className={`text-sm ${
+                        isOverdue(project.endDate) && project.status === 'ACTIVE'
+                          ? 'text-red-600'
+                          : 'text-gray-600 dark:text-gray-400'
+                      }`}>
+                        <CalendarIcon className="h-4 w-4 inline mr-1" />
+                        Deadline: {formatDate(project.endDate)}
+                      </p>
+                    )}
+                    
+                    <div className="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
+                      <span className="flex items-center">
+                        <UserGroupIcon className="h-4 w-4 mr-1" />
+                        {project._count.members} Mitglieder
+                      </span>
+                      <span>
+                        {project._count.tasks} Aufgaben
+                      </span>
+                    </div>
+                    
+                    <div className="flex justify-between items-center pt-3 border-t border-gray-200 dark:border-gray-700">
+                      <div className="flex space-x-2">
+                        <Link href={`/projects/${project.id}`}>
+                          <Button size="sm" variant="outline">
+                            <EyeIcon className="h-4 w-4 mr-1" />
+                            Anzeigen
+                          </Button>
+                        </Link>
+                        <Button size="sm" variant="ghost">
+                          <PencilIcon className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {formatDate(project.updatedAt)}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          // Liste View
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 dark:bg-gray-800">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Projekt
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Priorität
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Team
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Deadline
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Aktionen
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                    {projects.map((project) => (
+                      <tr key={project.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">
+                              {project.name}
+                            </div>
+                            {project.clientName && (
+                              <div className="text-sm text-gray-500 dark:text-gray-400">
+                                {project.clientName}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(project.status)}`}>
+                            {project.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 text-xs rounded-full ${getPriorityColor(project.priority)}`}>
+                            {project.priority}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {project._count.members} Mitglieder
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                          {project.endDate ? (
+                            <span className={isOverdue(project.endDate) && project.status === 'ACTIVE' ? 'text-red-600' : ''}>
+                              {formatDate(project.endDate)}
+                            </span>
+                          ) : (
+                            '-'
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex space-x-2">
+                            <Link href={`/projects/${project.id}`}>
+                              <Button size="sm" variant="outline">
+                                <EyeIcon className="h-4 w-4" />
+                              </Button>
+                            </Link>
+                            <Button size="sm" variant="ghost">
+                              <PencilIcon className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </CardContent>
           </Card>
+        )}
+
+        {projects.length === 0 && (
+          <div className="text-center py-12">
+            <FolderIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+            <p className="text-gray-500 dark:text-gray-400">
+              {searchTerm || filterStatus !== 'ALL' || filterPriority !== 'ALL'
+                ? 'Keine Projekte für die aktuellen Filter gefunden.'
+                : 'Noch keine Projekte erstellt. Beginnen Sie mit Ihrem ersten Projekt!'
+              }
+            </p>
+            {!(searchTerm || filterStatus !== 'ALL' || filterPriority !== 'ALL') && (
+              <Button className="mt-4">
+                <PlusIcon className="h-4 w-4 mr-2" />
+                Erstes Projekt erstellen
+              </Button>
+            )}
+          </div>
         )}
       </div>
     </div>
   )
 }
+
+export default withAuth(ProjectsPage)

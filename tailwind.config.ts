@@ -95,6 +95,37 @@ const config: Config = {
           900: '#7f1d1d',
           950: '#450a0a',
         },
+        
+        // Learning-specific Colors (LXP)
+        learning: {
+          progress: '#3b82f6',
+          completed: '#22c55e',
+          locked: '#6b7280',
+          featured: '#8b5cf6',
+          skill: '#f59e0b',
+          badge: '#dc2626',
+        },
+        
+        // Gamification Colors
+        gamification: {
+          bronze: '#cd7f32',
+          silver: '#c0c0c0',
+          gold: '#ffd700',
+          xp: '#8b5cf6',
+          streak: '#f59e0b',
+          achievement: '#22c55e',
+          level: '#3b82f6',
+        },
+        
+        // Dark Mode Enhanced Colors
+        dark: {
+          background: '#0f172a',
+          surface: '#1e293b',
+          elevated: '#334155',
+          text: '#f8fafc',
+          textSecondary: '#cbd5e1',
+          border: '#475569',
+        },
       },
       // Erweiterte Schriftarten
       fontFamily: {
@@ -109,6 +140,54 @@ const config: Config = {
         'glow': '0 0 20px rgba(59, 130, 246, 0.3)',
         'glow-lg': '0 0 40px rgba(59, 130, 246, 0.4)',
       },
+      // Enhanced Keyframes
+      keyframes: {
+        fadeIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        slideUp: {
+          '0%': { transform: 'translateY(10px)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
+        slideDown: {
+          '0%': { transform: 'translateY(-10px)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' },
+        },
+        scaleIn: {
+          '0%': { transform: 'scale(0.9)', opacity: '0' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        bounceGentle: {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-5px)' },
+        },
+        // Gamification Animations
+        'bounce-in': {
+          '0%': { transform: 'scale(0.3)', opacity: '0' },
+          '50%': { transform: 'scale(1.05)' },
+          '70%': { transform: 'scale(0.9)' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
+        },
+        'pulse-glow': {
+          '0%, 100%': { boxShadow: '0 0 5px rgba(59, 130, 246, 0.5)' },
+          '50%': { boxShadow: '0 0 20px rgba(59, 130, 246, 0.8)' },
+        },
+        'progress-fill': {
+          '0%': { width: '0%' },
+          '100%': { width: 'var(--progress-width)' },
+        },
+        'float': {
+          '0%, 100%': { transform: 'translateY(0px)' },
+          '50%': { transform: 'translateY(-10px)' },
+        },
+        'shake': {
+          '0%, 100%': { transform: 'translateX(0)' },
+          '10%, 30%, 50%, 70%, 90%': { transform: 'translateX(-2px)' },
+          '20%, 40%, 60%, 80%': { transform: 'translateX(2px)' },
+        },
+      },
+      
       // Erweiterte Animationen
       animation: {
         'fade-in': 'fadeIn 0.5s ease-in-out',
@@ -116,12 +195,29 @@ const config: Config = {
         'slide-down': 'slideDown 0.3s ease-out',
         'scale-in': 'scaleIn 0.2s ease-out',
         'bounce-gentle': 'bounceGentle 2s infinite',
+        // Gamification Animations
+        'bounce-in': 'bounce-in 0.6s ease-out',
+        'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
+        'progress-fill': 'progress-fill 1s ease-out forwards',
+        'float': 'float 3s ease-in-out infinite',
+        'shake': 'shake 0.5s ease-in-out',
       },
-      // Erweiterte Abstände
+      // Erweiterte Abstände (4px Grid System)
       spacing: {
         '18': '4.5rem',
         '88': '22rem',
         '128': '32rem',
+        // Touch-optimized sizes
+        'touch': '44px', // Minimum touch target (11 * 4px)
+      },
+      
+      // Touch-optimized minimum sizes
+      minHeight: {
+        'touch': '44px', // WCAG-compliant touch target
+        'card': '120px',
+      },
+      minWidth: {
+        'touch': '44px', // WCAG-compliant touch target
       },
       // Erweiterte Border-Radius
       borderRadius: {
